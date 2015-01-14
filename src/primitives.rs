@@ -49,7 +49,6 @@ impl<A: Send + Sync + Clone> Event<A> {
         spawn_over(self.listen(), subject, self.subject.clone(), f);
     }
 
-
     pub fn map<B: Send + Sync + Clone, F: Fn(A) -> B + Send>(&self, f: F) -> Event<B> {
         let event = Event::new();
         self.spawn_over(event.subject.downgrade(), move |mut subject, a| subject.send(f(a)));
@@ -127,7 +126,9 @@ mod test {
         let sink = Event::new();
         let r = sink.listen();
         sink.send(1);
-        assert_eq!(r.recv(), Ok(1))
+        sink.send(2);
+        assert_eq!(r.recv(), Ok(1));
+        assert_eq!(r.recv(), Ok(2));
     }
 
     #[test]
