@@ -1,14 +1,19 @@
 use std::sync::mpsc::{channel, Sender, Receiver};
 
-pub struct Subject<A: Send + Clone> {
+pub struct Subject<A> {
     senders: Vec<Sender<A>>,
 }
 
-impl<A: Send + Clone> Subject<A> {
+unsafe impl<A: Send> Send for Subject<A> {}
+unsafe impl<A: Sync> Sync for Subject<A> {}
+
+impl<A> Subject<A> {
     pub fn new() -> Subject<A> {
         Subject { senders: Vec::new() }
     }
+}
 
+impl<A: Send + Clone> Subject<A> {
     pub fn listen(&mut self) -> Receiver<A> {
         let (tx, rx) = channel::<A>();
         self.senders.push(tx);
