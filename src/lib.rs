@@ -1,8 +1,6 @@
 #![allow(unstable)]
 
-pub use event::Event;
-pub use behaviour::Behaviour;
+pub use primitives::{Event, Behaviour};
 
 mod subject;
-mod event;
-mod behaviour;
+mod primitives;
