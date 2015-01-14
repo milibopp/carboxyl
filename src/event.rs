@@ -2,6 +2,7 @@ use std::sync::mpsc::Receiver;
 use std::sync::{Arc, RwLock};
 use std::thread::Thread;
 use subject::Subject;
+use Behaviour;
 
 /// Thread keeps internal subject alive
 fn spawn_over<A, B, F>(src: &Event<A>, dest: &Event<B>, f: F)
@@ -62,6 +63,10 @@ impl<A: Send + Sync + Clone> Event<A> {
         spawn_over(self, &event, |mut subject, a| subject.send(a));
         spawn_over(other, &event, |mut subject, a| subject.send(a));
         event
+    }
+
+    pub fn hold(&self, a: A) -> Behaviour<A> {
+        Behaviour::new(a, self)
     }
 }
 

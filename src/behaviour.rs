@@ -35,9 +35,9 @@ mod test {
     use super::*;
 
     #[test]
-    fn behaviour_new() {
+    fn hold() {
         let sink = Event::new();
-        let behaviour = Behaviour::new(1, &sink);
+        let behaviour = sink.hold(1);
         sink.send(3);
         assert_eq!(behaviour.state(), 3);
     }
