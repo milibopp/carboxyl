@@ -65,8 +65,9 @@ impl<A: Send + Sync + Clone> Event<A> {
     /// with the order, in which they were fired.
     pub fn merge(&self, other: &Event<A>) -> Event<A> {
         let event = Event::new();
-        self.spawn_over(event.subject.downgrade(), |mut subject, a| subject.send(a));
-        other.spawn_over(event.subject.downgrade(), |mut subject, a| subject.send(a));
+        for src_ev in [self, other].iter() {
+            src_ev.spawn_over(event.subject.downgrade(), |mut subject, a| subject.send(a));
+        }
         event
     }
 
@@ -113,6 +114,26 @@ impl<A: Send + Sync + Clone> Behaviour<A> {
 
     pub fn sample(&self) -> A {
         self.state.read().unwrap().0.clone()
+    }
+
+    pub fn updates(&self) -> Receiver<A> {
+        self.state.write().unwrap().1.listen()
+    }
+
+    pub fn lift<B, F>(&self, f: F) -> Behaviour<B>
+        where B: Send + Sync + Clone,
+              F: Fn(A) -> B + Send,
+    {
+        let lifted = Behaviour::constant(f(self.sample()));
+        let self_state = self.state.clone();
+        spawn_over(
+            self.updates(), lifted.state.downgrade(), self_state,
+            move |&mut (ref mut state, ref mut subject), a| {
+                *state = f(a);
+                subject.send(state.clone())
+            },
+        );
+        lifted
     }
 }
 
@@ -195,5 +216,15 @@ mod test {
         assert_eq!(r.recv(), Ok(7));
         sink.send(-5);
         assert_eq!(r.recv(), Ok(-9));
+    }
+
+    #[test]
+    fn lift() {
+        let sink = Event::new();
+        let lifted = sink.hold(3).lift(|x| x * 3);
+        assert_eq!(lifted.sample(), 9);
+        let r = lifted.updates();
+        sink.send(4);
+        assert_eq!(r.recv(), Ok(12));
     }
 }
