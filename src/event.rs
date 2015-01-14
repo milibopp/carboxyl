@@ -104,4 +104,13 @@ mod test {
         let result = (r.recv(), r.recv());
         assert!((result == (Ok(3), Ok(4))) || (result == (Ok(4), Ok(3))));
     }
+
+    #[test]
+    fn chain() {
+        let sink: Event<i32> = Event::new();
+        let chain = sink.map(|x| x + 2).filter(|&x| x > 10);
+        let r = chain.listen();
+        sink.send(9);
+        assert_eq!(r.recv(), Ok(11));
+    }
 }
