@@ -1,4 +1,4 @@
-pub use primitives::Event;
+pub use event::Event;
 
 mod subject;
-mod primitives;
+mod event;
