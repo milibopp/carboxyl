@@ -44,6 +44,19 @@ impl<A: Send + Sync + Clone> Event<A> {
         });
         event
     }
+
+    pub fn merge(&self, other: &Event<A>) -> Event<A> {
+        let event = Event::new();
+        for source in [self, other].iter().map(|x| x.listen()) {
+            let subject = event.subject.clone();
+            Thread::spawn(move || {
+                for a in source.iter() {
+                    subject.write().unwrap().send(a);
+                }
+            });
+        }
+        event
+    }
 }
 
 
@@ -76,5 +89,17 @@ mod test {
         sink.send(-2);
         sink.send(3);
         assert_eq!(r.recv(), Ok(3));
+    }
+
+    #[test]
+    fn merge() {
+        let sink1 = Event::new();
+        let sink2 = Event::new();
+        let merge = sink1.merge(&sink2);
+        let r = merge.listen();
+        sink1.send(3);
+        sink2.send(4);
+        assert_eq!(r.recv(), Ok(3));
+        assert_eq!(r.recv(), Ok(4));
     }
 }
