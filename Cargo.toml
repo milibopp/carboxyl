@@ -1,0 +1,5 @@
+[package]
+
+name = "rustfrp"
+version = "0.0.1"
+authors = ["Eduard Bopp <eduard.bopp@aepsil0n.de>"]
