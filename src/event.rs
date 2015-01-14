@@ -45,6 +45,8 @@ impl<A: Send + Sync + Clone> Event<A> {
         event
     }
 
+    /// Note: the specific order of the merge is not guaranteed to be consistent
+    /// with the order, in which they were fired.
     pub fn merge(&self, other: &Event<A>) -> Event<A> {
         let event = Event::new();
         for source in [self, other].iter().map(|x| x.listen()) {
@@ -99,7 +101,7 @@ mod test {
         let r = merge.listen();
         sink1.send(3);
         sink2.send(4);
-        assert_eq!(r.recv(), Ok(3));
-        assert_eq!(r.recv(), Ok(4));
+        let result = (r.recv(), r.recv());
+        assert!((result == (Ok(3), Ok(4))) || (result == (Ok(4), Ok(3))));
     }
 }
