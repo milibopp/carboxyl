@@ -32,6 +32,18 @@ impl<A: Send + Sync + Clone> Event<A> {
         });
         event
     }
+
+    pub fn filter<F: Fn(&A) -> bool + Send>(&self, f: F) -> Event<A> {
+        let event = Event::new();
+        let source = self.listen();
+        let subject = event.subject.clone();
+        Thread::spawn(move || {
+            for a in source.iter().filter(|a| f(a)) {
+                subject.write().unwrap().send(a);
+            }
+        });
+        event
+    }
 }
 
 
@@ -53,6 +65,16 @@ mod test {
         let triple = sink.map(|x| 3 * x);
         let r = triple.listen();
         sink.send(1);
+        assert_eq!(r.recv(), Ok(3));
+    }
+
+    #[test]
+    fn filter() {
+        let sink: Event<i32> = Event::new();
+        let positive = sink.filter(|&x| x > 0);
+        let r = positive.listen();
+        sink.send(-2);
+        sink.send(3);
         assert_eq!(r.recv(), Ok(3));
     }
 }
