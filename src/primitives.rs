@@ -1,7 +1,7 @@
 use std::sync::{Arc, RwLock};
 use subject::{
-    self, Subject, Source, Mapper, Receiver, WrapListener, Snapper,
-    SnapperWrapper,
+    self, Subject, Source, Mapper, Receiver, WrapArc, Snapper, Merger,
+    WeakSnapperWrapper,
 };
 use behaviour::{Behaviour, Hold};
 
@@ -77,8 +77,10 @@ impl<A, B, F> Map<A, B, F>
           F: Fn(A) -> B + Send + Sync,
 {
     pub fn new<E: Event<A>>(event: &E, f: F) -> Map<A, B, F> {
-        let map = Map { mapper: Arc::new(RwLock::new(Mapper::new(f))) };
-        event.source().write().unwrap().listen(map.mapper.wrap());
+        let map = Map { mapper: Arc::new(RwLock::new(
+            Mapper::new(f, event.source().wrap_as_subject())
+        )) };
+        event.source().write().unwrap().listen(map.mapper.wrap_as_listener());
         map
     }
 }
@@ -106,9 +108,9 @@ impl<A, F> Filter<A, F>
 {
     pub fn new<E: Event<A>>(event: &E, f: F) -> Filter<A, F> {
         let filter = Filter {
-            filter: Arc::new(RwLock::new(subject::Filter::new(f)))
+            filter: Arc::new(RwLock::new(subject::Filter::new(f, event.source().wrap_as_subject()))),
         };
-        event.source().write().unwrap().listen(filter.filter.wrap());
+        event.source().write().unwrap().listen(filter.filter.wrap_as_listener());
         filter
     }
 }
@@ -126,7 +128,7 @@ impl<A, F> HasSource<A> for Filter<A, F>
 
 
 pub struct Merge<A> {
-    source: Arc<RwLock<Source<A>>>,
+    source: Arc<RwLock<Merger<A>>>,
 }
 
 impl<A> Merge<A>
@@ -134,10 +136,13 @@ impl<A> Merge<A>
 {
     pub fn new<E1: Event<A>, E2: Event<A>>(event1: &E1, event2: &E2) -> Merge<A> {
         let merge = Merge {
-            source: Arc::new(RwLock::new(Source::new()))
+            source: Arc::new(RwLock::new(Merger::new([
+                event1.source().wrap_as_subject(),
+                event2.source().wrap_as_subject(),
+            ]))),
         };
-        event1.source().write().unwrap().listen(merge.source.wrap());
-        event2.source().write().unwrap().listen(merge.source.wrap());
+        event1.source().write().unwrap().listen(merge.source.wrap_as_listener());
+        event2.source().write().unwrap().listen(merge.source.wrap_as_listener());
         merge
     }
 }
@@ -145,9 +150,9 @@ impl<A> Merge<A>
 impl<A> HasSource<A> for Merge<A>
     where A: Send + Sync + Clone,
 {
-    type Source = Source<A>;
+    type Source = Merger<A>;
 
-    fn source(&self) -> &Arc<RwLock<Source<A>>> {
+    fn source(&self) -> &Arc<RwLock<Merger<A>>> {
         &self.source
     }
 }
@@ -162,11 +167,14 @@ impl<A, B> Snapshot<A, B>
 {
     pub fn new<Be: Behaviour<A>, Ev: Event<B>>(behaviour: &Be, event: &Ev) -> Snapshot<A, B> {
         let snap = Snapshot {
-            source: Arc::new(RwLock::new(Snapper::new(behaviour.sample())))
+            source: Arc::new(RwLock::new(Snapper::new(
+                behaviour.sample(),
+                (behaviour.source().wrap_as_subject(), event.source().wrap_as_subject())
+            )))
         };
         behaviour.source().write().unwrap()
-            .listen(SnapperWrapper::boxed(&snap.source));
-        event.source().write().unwrap().listen(snap.source.wrap());
+            .listen(WeakSnapperWrapper::boxed(&snap.source));
+        event.source().write().unwrap().listen(snap.source.wrap_as_listener());
         snap
     }
 }
@@ -186,8 +194,12 @@ pub struct Iter<A> {
 
 impl<A: Send + Sync + Clone> Iter<A> {
     fn new<E: Event<A>>(event: &E) -> Iter<A> {
-        let iter = Iter { recv: Arc::new(RwLock::new(Receiver::new())) };
-        event.source().write().unwrap().listen(iter.recv.wrap());
+        let iter = Iter {
+            recv: Arc::new(RwLock::new(Receiver::new(
+                event.source().wrap_as_subject()
+            ))),
+        };
+        event.source().write().unwrap().listen(iter.recv.wrap_as_listener());
         iter
     }
 }
@@ -237,11 +249,41 @@ mod test {
     fn merge() {
         let sink1 = Sink::new();
         let sink2 = Sink::new();
-        let merge = sink1.merge(&sink2);
-        let mut iter = merge.iter();
+        let mut iter = sink1.merge(&sink2).iter();
         sink1.send(12);
         sink2.send(9);
         assert_eq!(iter.next(), Some(12));
         assert_eq!(iter.next(), Some(9));
+    }
+
+    #[test]
+    fn chain_1() {
+        let sink = Sink::new();
+        let chain = sink.filter(|&x: &i32| x < 20).map(|x| x / 2);
+        let mut iter = chain.iter();
+        sink.send(4);
+        assert_eq!(iter.next(), Some(2));
+    }
+
+    #[test]
+    fn chain_2() {
+        let sink: Sink<i32> = Sink::new();
+        let chain = sink.map(|x| x / 2).filter(|&x| x < 3);
+        let mut iter = chain.iter();
+        sink.send(4);
+        assert_eq!(iter.next(), Some(2));
+    }
+
+    #[test]
+    fn chain_3() {
+        let sink1: Sink<i32> = Sink::new();
+        let sink2: Sink<i32> = Sink::new();
+        let mut iter = sink1.map(|x| x + 4)
+            .merge(&sink2.filter(|&x| x < 4).map(|x| x * 5))
+            .iter();
+        sink1.send(12);
+        sink2.send(3);
+        assert_eq!(iter.next(), Some(16));
+        assert_eq!(iter.next(), Some(15));
     }
 }
