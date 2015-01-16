@@ -2,11 +2,13 @@ use std::sync::{Arc, RwLock};
 use subject::{self, Subject, Source, Mapper, Receiver, WrapListener};
 
 
-pub trait Event<A: Send + Sync + Clone> {
+pub trait HasSource<A> {
     type Source: Subject<A>;
 
     fn source(&self) -> &Arc<RwLock<Self::Source<A>>>;
+}
 
+pub trait Event<A: Send + Sync + Clone>: HasSource<A> {
     fn map<B, F>(&self, f: F) -> Map<A, B, F>
         where B: Send + Sync + Clone,
               F: Fn(A) -> B + Send + Sync,
@@ -32,6 +34,8 @@ pub trait Event<A: Send + Sync + Clone> {
     }
 }
 
+impl<A: Send + Sync + Clone, T: HasSource<A>> Event<A> for T {}
+
 
 pub struct Sink<A> {
     source: Arc<RwLock<Source<A>>>,
@@ -49,7 +53,7 @@ impl<A: Send + Sync + Clone> Sink<A> {
     }
 }
 
-impl<A: Send + Sync + Clone> Event<A> for Sink<A> {
+impl<A: Send + Sync + Clone> HasSource<A> for Sink<A> {
     type Source = subject::Source<A>;
 
     fn source(&self) -> &Arc<RwLock<subject::Source<A>>> {
@@ -74,7 +78,7 @@ impl<A, B, F> Map<A, B, F>
     }
 }
 
-impl<A, B, F> Event<B> for Map<A, B, F>
+impl<A, B, F> HasSource<B> for Map<A, B, F>
     where A: Send + Sync + Clone,
           B: Send + Sync + Clone,
           F: Fn(A) -> B + Send + Sync,
@@ -104,7 +108,7 @@ impl<A, F> Filter<A, F>
     }
 }
 
-impl<A, F> Event<A> for Filter<A, F>
+impl<A, F> HasSource<A> for Filter<A, F>
     where A: Send + Sync + Clone,
           F: Fn(&A) -> bool + Send + Sync,
 {
@@ -134,7 +138,7 @@ impl<A> Merge<A>
     }
 }
 
-impl<A> Event<A> for Merge<A>
+impl<A> HasSource<A> for Merge<A>
     where A: Send + Sync + Clone,
 {
     type Source = Source<A>;
