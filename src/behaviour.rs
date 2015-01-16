@@ -1,5 +1,5 @@
 use std::sync::{Arc, RwLock};
-use subject::{Subject, Holder, WrapArc, Sample};
+use subject::{Subject, Holder, WrapArc, Sample, BehaviourSwitcher};
 use primitives::{Event, HasSource, Snapshot};
 
 
@@ -10,6 +10,13 @@ pub trait Behaviour<A: Send + Sync + Clone>: HasSource<A> + Sized + Clone + Send
         where B: Send + Sync + Clone, E: Event<B>
     {
         Snapshot::new(self, event)
+    }
+
+    fn switch<B>(&self) -> Switch<B, A>
+        where A: Behaviour<B>,
+              B: Send + Sync + Clone,
+    {
+        Switch::new(self)
     }
 }
 
@@ -51,6 +58,46 @@ impl<A: Send + Sync + Clone> Behaviour<A> for Hold<A> {
 }
 
 
+pub struct Switch<A, Be> {
+    switcher: Arc<RwLock<BehaviourSwitcher<A, Be>>>,
+}
+
+impl<A, Be> Clone for Switch<A, Be> {
+    fn clone(&self) -> Switch<A, Be> {
+        Switch { switcher: self.switcher.clone() }
+    }
+}
+
+impl<A: Send + Sync + Clone, Be: Behaviour<A>> Switch<A, Be> {
+    pub fn new<BBe: Behaviour<Be>>(behaviour: &BBe) -> Switch<A, Be> {
+        let switch = Switch {
+            switcher: Arc::new(RwLock::new(
+                BehaviourSwitcher::new(
+                    behaviour.sample().sample(),
+                    behaviour.source().wrap_as_subject(),
+                )
+            ))
+        };
+        behaviour.source().write().unwrap().listen(switch.switcher.wrap_as_listener());
+        switch
+    }
+}
+
+impl<A: Send + Sync + Clone, Be: Behaviour<A>> HasSource<A> for Switch<A, Be> {
+    type Source = BehaviourSwitcher<A, Be>;
+
+    fn source(&self) -> &Arc<RwLock<BehaviourSwitcher<A, Be>>> {
+        &self.switcher
+    }
+}
+
+impl<A: Send + Sync + Clone, Be: Behaviour<A>> Behaviour<A> for Switch<A, Be> {
+    fn sample(&self) -> A {
+        self.switcher.read().unwrap().sample()
+    }
+}
+
+
 #[cfg(test)]
 mod test {
     use primitives::{Event, Sink};
@@ -79,5 +126,19 @@ mod test {
         assert_eq!(iter.next(), None);
         ev2.send(6);
         assert_eq!(iter.next(), Some((-2, 6)));
+    }
+
+    #[test]
+    fn switch() {
+        let stream1 = Sink::<Option<i32>>::new();
+        let stream2 = Sink::<Option<i32>>::new();
+        let button1 = Sink::<()>::new();
+        let button2 = Sink::<()>::new();
+        let tv = {
+            let stream1 = stream1.hold(None);
+            let stream2 = stream2.hold(None);
+            button1.map(move |_| stream1.clone())
+                .merge(&button2.map(move |_| stream2.clone()))
+        };
     }
 }
