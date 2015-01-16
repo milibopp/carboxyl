@@ -3,7 +3,7 @@ use subject::{Subject, Holder, WrapArc};
 use primitives::{Event, HasSource, Snapshot};
 
 
-pub trait Behaviour<A: Send + Sync + Clone>: HasSource<A> + Sized {
+pub trait Behaviour<A: Send + Sync + Clone>: HasSource<A> + Sized + Clone {
     fn sample(&self) -> A;
 
     fn snapshot<B, E>(&self, event: &E) -> Snapshot<A, B>
@@ -16,6 +16,12 @@ pub trait Behaviour<A: Send + Sync + Clone>: HasSource<A> + Sized {
 
 pub struct Hold<A> {
     holder: Arc<RwLock<Holder<A>>>,
+}
+
+impl<A> Clone for Hold<A> {
+    fn clone(&self) -> Hold<A> {
+        Hold { holder: self.holder.clone() }
+    }
 }
 
 impl<A: Send + Sync + Clone> Hold<A> {
