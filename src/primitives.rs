@@ -1,23 +1,38 @@
 use std::sync::{Arc, RwLock};
-use subject::{self, Source, Mapper, WrapListener, Subject, Receiver};
+use subject::{self, Subject, Source, Mapper, Receiver, WrapListener};
 
 
-pub trait Event<A> {
+pub trait Event<A: Send + Sync + Clone> {
+    type Source: Subject<A>;
+
+    fn source(&self) -> &Arc<RwLock<Self::Source<A>>>;
+
     fn map<B, F>(&self, f: F) -> Map<A, B, F>
-        where F: Fn(A) -> B;
+        where B: Send + Sync + Clone,
+              F: Fn(A) -> B + Send + Sync,
+    {
+        Map::new(&mut *self.source().write().unwrap(), f)
+    }
+
     fn filter<F>(&self, f: F) -> Filter<A, F>
-        where F: Fn(&A) -> bool + Send + Sync;
-    fn iter(&self) -> Iter<A>;
+        where F: Fn(&A) -> bool + Send + Sync,
+    {
+        Filter::new(&mut *self.source().write().unwrap(), f)
+    }
+
+    fn iter(&self) -> Iter<A> {
+        Iter::new(&mut *self.source().write().unwrap())
+    }
 }
 
 
 pub struct Sink<A> {
-    source: RwLock<Source<A>>,
+    source: Arc<RwLock<Source<A>>>,
 }
 
 impl<A: Send> Sink<A> {
     pub fn new() -> Sink<A> {
-        Sink { source: RwLock::new(Source::new()) }
+        Sink { source: Arc::new(RwLock::new(Source::new())) }
     }
 }
 
@@ -28,21 +43,10 @@ impl<A: Send + Sync + Clone> Sink<A> {
 }
 
 impl<A: Send + Sync + Clone> Event<A> for Sink<A> {
-    fn map<B, F>(&self, f: F) -> Map<A, B, F>
-        where B: Send + Sync + Clone,
-              F: Fn(A) -> B + Send + Sync,
-    {
-        Map::new(&mut *self.source.write().unwrap(), f)
-    }
+    type Source = subject::Source<A>;
 
-    fn filter<F>(&self, f: F) -> Filter<A, F>
-        where F: Fn(&A) -> bool + Send + Sync,
-    {
-        Filter::new(&mut *self.source.write().unwrap(), f)
-    }
-
-    fn iter(&self) -> Iter<A> {
-        Iter::new(&mut *self.source.write().unwrap())
+    fn source(&self) -> &Arc<RwLock<subject::Source<A>>> {
+        &self.source
     }
 }
 
@@ -68,21 +72,10 @@ impl<A, B, F> Event<B> for Map<A, B, F>
           B: Send + Sync + Clone,
           F: Fn(A) -> B + Send + Sync,
 {
-    fn map<C, G>(&self, g: G) -> Map<B, C, G>
-        where C: Send + Sync + Clone,
-              G: Fn(B) -> C + Send + Sync,
-    {
-        Map::new(&mut *self.mapper.write().unwrap(), g)
-    }
+    type Source = Mapper<A, B, F>;
 
-    fn filter<G>(&self, g: G) -> Filter<B, G>
-        where G: Fn(&B) -> bool + Send + Sync,
-    {
-        Filter::new(&mut *self.mapper.write().unwrap(), g)
-    }
-
-    fn iter(&self) -> Iter<B> {
-        Iter::new(&mut *self.mapper.write().unwrap())
+    fn source(&self) -> &Arc<RwLock<Mapper<A, B, F>>> {
+        &self.mapper
     }
 }
 
@@ -108,21 +101,10 @@ impl<A, F> Event<A> for Filter<A, F>
     where A: Send + Sync + Clone,
           F: Fn(&A) -> bool + Send + Sync,
 {
-    fn map<B, G>(&self, g: G) -> Map<A, B, G>
-        where B: Send + Sync + Clone,
-              G: Fn(A) -> B + Send + Sync,
-    {
-        Map::new(&mut *self.filter.write().unwrap(), g)
-    }
+    type Source = subject::Filter<A, F>;
 
-    fn filter<G>(&self, g: G) -> Filter<A, G>
-        where G: Fn(&A) -> bool + Send + Sync,
-    {
-        Filter::new(&mut *self.filter.write().unwrap(), g)
-    }
-
-    fn iter(&self) -> Iter<A> {
-        Iter::new(&mut *self.filter.write().unwrap())
+    fn source(&self) -> &Arc<RwLock<subject::Filter<A, F>>> {
+        &self.filter
     }
 }
 
