@@ -16,19 +16,19 @@ pub trait Listener<A>: Send + Sync {
     fn accept(&mut self, a: A) -> ListenerResult;
 }
 
-pub struct ListenerWrapper<L> {
+pub struct WeakListenerWrapper<L> {
     weak: Weak<RwLock<L>>
 }
 
-impl<L> ListenerWrapper<L> {
+impl<L> WeakListenerWrapper<L> {
     pub fn boxed<A>(strong: &Arc<RwLock<L>>) -> Box<Listener<A> + 'static>
         where L: Listener<A>, A: Send + Sync,
     {
-        Box::new(ListenerWrapper { weak: strong.downgrade() })
+        Box::new(WeakListenerWrapper { weak: strong.downgrade() })
     }
 }
 
-impl<A, L> Listener<A> for ListenerWrapper<L>
+impl<A, L> Listener<A> for WeakListenerWrapper<L>
     where L: Listener<A> + Send + Sync, A: Send + Sync
 {
     fn accept(&mut self, a: A) -> ListenerResult {
@@ -43,16 +43,46 @@ impl<A, L> Listener<A> for ListenerWrapper<L>
 }
 
 
-pub trait WrapListener<L> {
-    fn wrap<A>(&self) -> Box<Listener<A> + 'static>
-        where L: Listener<A>, A: Send + Sync;
+pub struct StrongSubjectWrapper<S> {
+    #[allow(dead_code)]
+    arc: Arc<RwLock<S>>
 }
 
-impl<L> WrapListener<L> for Arc<RwLock<L>> {
-    fn wrap<A>(&self) -> Box<Listener<A> + 'static>
+impl<S> StrongSubjectWrapper<S> {
+    pub fn boxed<A>(strong: &Arc<RwLock<S>>) -> Box<Subject<A> + 'static>
+        where S: Subject<A>, A: Send + Sync,
+    {
+        Box::new(StrongSubjectWrapper { arc: strong.clone() })
+    }
+}
+
+impl<A, S> Subject<A> for StrongSubjectWrapper<S>
+    where S: Subject<A> + Send + Sync, A: Send + Sync
+{
+    fn listen(&mut self, _: Box<Listener<A> + 'static>) {
+        panic!("only meant to keep source alive");
+    }
+}
+
+
+pub trait WrapArc<L> {
+    fn wrap_as_listener<A>(&self) -> Box<Listener<A> + 'static>
+        where L: Listener<A>, A: Send + Sync;
+    fn wrap_as_subject<A>(&self) -> Box<Subject<A> + 'static>
+        where L: Subject<A>, A: Send + Sync;
+}
+
+impl<L> WrapArc<L> for Arc<RwLock<L>> {
+    fn wrap_as_listener<A>(&self) -> Box<Listener<A> + 'static>
         where L: Listener<A>, A: Send + Sync
     {
-        ListenerWrapper::boxed(self)
+        WeakListenerWrapper::boxed(self)
+    }
+
+    fn wrap_as_subject<A>(&self) -> Box<Subject<A> + 'static>
+        where L: Subject<A>, A: Send + Sync
+    {
+        StrongSubjectWrapper::boxed(self)
     }
 }
 
@@ -102,12 +132,14 @@ impl<A: Send + Sync> Subject<A> for Source<A> {
 
 pub struct Mapper<A, B, F: Fn(A) -> B> {
     func: F,
-    subject: Source<B>,
+    source: Source<B>,
+    #[allow(dead_code)]
+    keep_alive: Box<Subject<A> + 'static>,
 }
 
 impl<A, B, F: Fn(A) -> B> Mapper<A, B, F> {
-    pub fn new(func: F) -> Mapper<A, B, F> {
-        Mapper { func: func, subject: Source::new() }
+    pub fn new(func: F, keep_alive: Box<Subject<A> + 'static>) -> Mapper<A, B, F> {
+        Mapper { func: func, source: Source::new(), keep_alive: keep_alive }
     }
 }
 
@@ -117,16 +149,17 @@ impl<A, B, F> Subject<B> for Mapper<A, B, F>
           F: Fn(A) -> B + Send + Sync,
 {
     fn listen(&mut self, listener: Box<Listener<B> + 'static>) {
-        self.subject.listen(listener);
+        self.source.listen(listener);
     }
 }
 
 impl<A, B, F> Listener<A> for Mapper<A, B, F>
-    where B: Send + Sync + Clone,
+    where A: Send + Sync,
+          B: Send + Sync + Clone,
           F: Fn(A) -> B + Send + Sync,
 {
     fn accept(&mut self, a: A) -> ListenerResult {
-        self.subject.accept((self.func)(a))
+        self.source.accept((self.func)(a))
     }
 }
 
@@ -134,11 +167,13 @@ impl<A, B, F> Listener<A> for Mapper<A, B, F>
 pub struct Filter<A, F> {
     func: F,
     source: Source<A>,
+    #[allow(dead_code)]
+    keep_alive: Box<Subject<A> + 'static>,
 }
 
 impl<A, F> Filter<A, F> {
-    pub fn new(f: F) -> Filter<A, F> {
-        Filter { source: Source::new(), func: f }
+    pub fn new(f: F, keep_alive: Box<Subject<A> + 'static>) -> Filter<A, F> {
+        Filter { source: Source::new(), func: f, keep_alive: keep_alive }
     }
 }
 
@@ -165,11 +200,13 @@ impl<A, F> Listener<A> for Filter<A, F>
 pub struct Holder<A> {
     current: A,
     source: Source<A>,
+    #[allow(dead_code)]
+    keep_alive: Box<Subject<A> + 'static>,
 }
 
 impl<A> Holder<A> {
-    pub fn new(initial: A) -> Holder<A> {
-        Holder { current: initial, source: Source::new() }
+    pub fn new(initial: A, keep_alive: Box<Subject<A> + 'static>) -> Holder<A> {
+        Holder { current: initial, source: Source::new(), keep_alive: keep_alive }
     }
 }
 
@@ -194,35 +231,13 @@ impl<A: Send + Sync + Clone> Listener<A> for Holder<A> {
 pub struct Snapper<A, B> {
     current: A,
     source: Source<(A, B)>,
+    #[allow(dead_code)]
+    keep_alive: (Box<Subject<A> + 'static>, Box<Subject<B> + 'static>),
 }
 
 impl<A, B> Snapper<A, B> {
-    pub fn new(initial: A) -> Snapper<A, B> {
-        Snapper { current: initial, source: Source::new() }
-    }
-}
-
-pub struct SnapperWrapper<A, B> {
-    weak: Weak<RwLock<Snapper<A, B>>>,
-}
-
-impl<A: Send + Sync, B: Send + Sync> SnapperWrapper<A, B> {
-    pub fn boxed(strong: &Arc<RwLock<Snapper<A, B>>>) -> Box<Listener<A> + 'static> {
-        Box::new(SnapperWrapper { weak: strong.downgrade() })
-    }
-}
-
-impl<A: Send + Sync, B: Send + Sync> Listener<A> for SnapperWrapper<A, B> {
-    fn accept(&mut self, a: A) -> ListenerResult {
-        let x = match self.weak.upgrade() {
-            Some(arc) => match arc.write() {
-                Ok(mut snapper) => { snapper.current = a; Ok(()) },
-                Err(_) => Err(ListenerError::Poisoned),
-            },
-            None => Err(ListenerError::Disappeared),
-        };
-        println!("{:?}", x);
-        x
+    pub fn new(initial: A, keep_alive: (Box<Subject<A> + 'static>, Box<Subject<B> + 'static>)) -> Snapper<A, B> {
+        Snapper { current: initial, source: Source::new(), keep_alive: keep_alive }
     }
 }
 
@@ -239,13 +254,63 @@ impl<A: Send + Sync, B: Send + Sync> Subject<(A, B)> for Snapper<A, B> {
 }
 
 
+pub struct Merger<A> {
+    source: Source<A>,
+    #[allow(dead_code)]
+    keep_alive: [Box<Subject<A> + 'static>; 2],
+}
+
+impl<A> Merger<A> {
+    pub fn new(keep_alive: [Box<Subject<A> + 'static>; 2]) -> Merger<A> {
+        Merger { source: Source::new(), keep_alive: keep_alive }
+    }
+}
+
+impl<A: Send + Sync + Clone> Listener<A> for Merger<A> {
+    fn accept(&mut self, a: A) -> ListenerResult {
+        self.source.accept(a)
+    }
+}
+
+impl<A: Send + Sync> Subject<A> for Merger<A> {
+    fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
+        self.source.listen(listener);
+    }
+}
+
+
+pub struct WeakSnapperWrapper<A, B> {
+    weak: Weak<RwLock<Snapper<A, B>>>,
+}
+
+impl<A: Send + Sync, B: Send + Sync> WeakSnapperWrapper<A, B> {
+    pub fn boxed(strong: &Arc<RwLock<Snapper<A, B>>>) -> Box<Listener<A> + 'static> {
+        Box::new(WeakSnapperWrapper { weak: strong.downgrade() })
+    }
+}
+
+impl<A: Send + Sync, B: Send + Sync> Listener<A> for WeakSnapperWrapper<A, B> {
+    fn accept(&mut self, a: A) -> ListenerResult {
+        match self.weak.upgrade() {
+            Some(arc) => match arc.write() {
+                Ok(mut snapper) => { snapper.current = a; Ok(()) },
+                Err(_) => Err(ListenerError::Poisoned),
+            },
+            None => Err(ListenerError::Disappeared),
+        }
+    }
+}
+
+
 pub struct Receiver<A> {
     buffer: RingBuf<A>,
+    #[allow(dead_code)]
+    keep_alive: Box<Subject<A> + 'static>,
 }
 
 impl<A> Receiver<A> {
-    pub fn new() -> Receiver<A> {
-        Receiver { buffer: RingBuf::new() }
+    pub fn new(keep_alive: Box<Subject<A> + 'static>) -> Receiver<A> {
+        Receiver { buffer: RingBuf::new(), keep_alive: keep_alive }
     }
 }
 
@@ -275,74 +340,74 @@ mod test {
 
     #[test]
     fn src_recv() {
-        let mut src = Source::new();
-        let recv = Arc::new(RwLock::new(Receiver::new()));
-        src.listen(recv.wrap());
-        src.send(3);
+        let src = Arc::new(RwLock::new(Source::new()));
+        let recv = Arc::new(RwLock::new(Receiver::new(src.wrap_as_subject())));
+        src.write().unwrap().listen(recv.wrap_as_listener());
+        src.write().unwrap().send(3);
         assert_eq!(recv.write().unwrap().next(), Some(3));
     }
 
     #[test]
     fn map() {
-        let mut src = Source::new();
-        let map = Arc::new(RwLock::new(Mapper::new(|x: i32| x + 3)));
-        src.listen(map.wrap());
-        let recv = Arc::new(RwLock::new(Receiver::new()));
-        map.write().unwrap().listen(recv.wrap());
-        src.send(3);
+        let src = Arc::new(RwLock::new(Source::new()));
+        let map = Arc::new(RwLock::new(Mapper::new(|x: i32| x + 3, src.wrap_as_subject())));
+        src.write().unwrap().listen(map.wrap_as_listener());
+        let recv = Arc::new(RwLock::new(Receiver::new(map.wrap_as_subject())));
+        map.write().unwrap().listen(recv.wrap_as_listener());
+        src.write().unwrap().send(3);
         assert_eq!(recv.write().unwrap().next(), Some(6));
     }
 
     #[test]
     fn fork() {
-        let mut src = Source::new();
-        let map = Arc::new(RwLock::new(Mapper::new(|x: i32| x + 3)));
-        src.listen(map.wrap());
-        let r1 = Arc::new(RwLock::new(Receiver::new()));
-        map.write().unwrap().listen(r1.wrap());
-        let r2 = Arc::new(RwLock::new(Receiver::new()));
-        src.listen(r2.wrap());
-        src.send(4);
+        let src = Arc::new(RwLock::new(Source::new()));
+        let map = Arc::new(RwLock::new(Mapper::new(|x: i32| x + 3, src.wrap_as_subject())));
+        src.write().unwrap().listen(map.wrap_as_listener());
+        let r1 = Arc::new(RwLock::new(Receiver::new(map.wrap_as_subject())));
+        map.write().unwrap().listen(r1.wrap_as_listener());
+        let r2 = Arc::new(RwLock::new(Receiver::new(src.wrap_as_subject())));
+        src.write().unwrap().listen(r2.wrap_as_listener());
+        src.write().unwrap().send(4);
         assert_eq!(r1.write().unwrap().next(), Some(7));
         assert_eq!(r2.write().unwrap().next(), Some(4));
     }
 
     #[test]
     fn filter() {
-        let mut src = Source::new();
-        let filter = Arc::new(RwLock::new(Filter::new(|&:x: &i32| *x > 2)));
-        src.listen(filter.wrap());
-        let recv = Arc::new(RwLock::new(Receiver::new()));
-        filter.write().unwrap().listen(recv.wrap());
-        src.send(1);
-        src.send(3);
+        let src = Arc::new(RwLock::new(Source::new()));
+        let filter = Arc::new(RwLock::new(Filter::new(|&:x: &i32| *x > 2, src.wrap_as_subject())));
+        src.write().unwrap().listen(filter.wrap_as_listener());
+        let recv = Arc::new(RwLock::new(Receiver::new(filter.wrap_as_subject())));
+        filter.write().unwrap().listen(recv.wrap_as_listener());
+        src.write().unwrap().send(1);
+        src.write().unwrap().send(3);
         assert_eq!(recv.write().unwrap().next(), Some(3));
     }
 
     #[test]
     fn holder() {
-        let mut src = Source::new();
-        let holder = Arc::new(RwLock::new(Holder::new(1)));
-        src.listen(holder.wrap());
+        let src = Arc::new(RwLock::new(Source::new()));
+        let holder = Arc::new(RwLock::new(Holder::new(1, src.wrap_as_subject())));
+        src.write().unwrap().listen(holder.wrap_as_listener());
         assert_eq!(holder.write().unwrap().current(), 1);
-        src.send(3);
+        src.write().unwrap().send(3);
         assert_eq!(holder.write().unwrap().current(), 3);
     }
 
     #[test]
     fn snapper() {
-        let mut src1 = Source::new();
-        let mut src2 = Source::new();
-        let snapper = Arc::new(RwLock::new(Snapper::new(3)));
-        src1.listen(SnapperWrapper::boxed(&snapper));
-        src2.listen(snapper.wrap());
-        let recv = Arc::new(RwLock::new(Receiver::new()));
-        snapper.write().unwrap().listen(recv.wrap());
-        src2.send(6);
-        assert_eq!(recv.write().unwrap().next(), Some((3, 6)));
-        src1.send(5);
+        let src1 = Arc::new(RwLock::new(Source::new()));
+        let src2 = Arc::new(RwLock::new(Source::new()));
+        let snapper = Arc::new(RwLock::new(Snapper::new(3, (src1.wrap_as_subject(), src2.wrap_as_subject()))));
+        src1.write().unwrap().listen(WeakSnapperWrapper::boxed(&snapper));
+        src2.write().unwrap().listen(snapper.wrap_as_listener());
+        let recv = Arc::new(RwLock::new(Receiver::new(snapper.wrap_as_subject())));
+        snapper.write().unwrap().listen(recv.wrap_as_listener());
+        src2.write().unwrap().send(6.0);
+        assert_eq!(recv.write().unwrap().next(), Some((3, 6.0)));
+        src1.write().unwrap().send(5);
         assert_eq!(recv.write().unwrap().next(), None);
-        src2.send(-4);
-        assert_eq!(recv.write().unwrap().next(), Some((5, -4)));
+        src2.write().unwrap().send(-4.0);
+        assert_eq!(recv.write().unwrap().next(), Some((5, -4.0)));
     }
 }

@@ -1,5 +1,5 @@
 use std::sync::{Arc, RwLock};
-use subject::{Subject, Holder, WrapListener};
+use subject::{Subject, Holder, WrapArc};
 use primitives::{Event, HasSource, Snapshot};
 
 
@@ -20,8 +20,12 @@ pub struct Hold<A> {
 
 impl<A: Send + Sync + Clone> Hold<A> {
     pub fn new<E: Event<A>>(initial: A, event: &E) -> Hold<A> {
-        let hold = Hold { holder: Arc::new(RwLock::new(Holder::new(initial))) };
-        event.source().write().unwrap().listen(hold.holder.wrap());
+        let hold = Hold {
+            holder: Arc::new(RwLock::new(
+                Holder::new(initial, event.source().wrap_as_subject())
+            ))
+        };
+        event.source().write().unwrap().listen(hold.holder.wrap_as_listener());
         hold
     }
 }
