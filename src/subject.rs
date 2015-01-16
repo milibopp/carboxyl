@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, RwLock, Weak};
 use std::collections::RingBuf;
-use behaviour::Behaviour;
+use primitives::Behaviour;
 
 
 #[derive(Show)]
@@ -33,15 +33,21 @@ impl<A, L> Listener<A> for WeakListenerWrapper<L>
     where L: Listener<A> + Send + Sync, A: Send + Sync
 {
     fn accept(&mut self, a: A) -> ListenerResult {
-        match self.weak.upgrade() {
+        let x = match self.weak.upgrade() {
             Some(listener) => match listener.write() {
                 Ok(mut listener) => listener.accept(a),
                 Err(_) => Err(ListenerError::Poisoned),
             },
             None => Err(ListenerError::Disappeared),
-        }
+        };
+        println!("{:?}", x);
+        x
     }
 }
+
+
+type KeepAlive<A> = Arc<RwLock<Box<Subject<A> + 'static>>>;
+type KeepAliveSample<A> = Arc<RwLock<Box<SamplingSubject<A> + 'static>>>;
 
 
 pub struct StrongSubjectWrapper<S> {
@@ -49,19 +55,19 @@ pub struct StrongSubjectWrapper<S> {
     arc: Arc<RwLock<S>>
 }
 
-impl<S> StrongSubjectWrapper<S> {
-    pub fn boxed<A>(strong: &Arc<RwLock<S>>) -> Box<Subject<A> + 'static>
-        where S: Subject<A>, A: Send + Sync,
-    {
-        Box::new(StrongSubjectWrapper { arc: strong.clone() })
-    }
-}
-
 impl<A, S> Subject<A> for StrongSubjectWrapper<S>
     where S: Subject<A> + Send + Sync, A: Send + Sync
 {
-    fn listen(&mut self, _: Box<Listener<A> + 'static>) {
-        panic!("only meant to keep source alive");
+    fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
+        self.arc.write().unwrap().listen(listener);
+    }
+}
+
+impl<A, S> Sample<A> for StrongSubjectWrapper<S>
+    where S: Sample<A> + Send + Sync, A: Send + Sync
+{
+    fn sample(&self) -> A {
+        self.arc.write().unwrap().sample()
     }
 }
 
@@ -69,8 +75,14 @@ impl<A, S> Subject<A> for StrongSubjectWrapper<S>
 pub trait WrapArc<L> {
     fn wrap_as_listener<A>(&self) -> Box<Listener<A> + 'static>
         where L: Listener<A>, A: Send + Sync;
-    fn wrap_as_subject<A>(&self) -> Box<Subject<A> + 'static>
+    fn wrap_as_subject<A>(&self) -> KeepAlive<A>
         where L: Subject<A>, A: Send + Sync;
+    fn wrap_into_subject<A>(self) -> KeepAlive<A>
+        where L: Subject<A>, A: Send + Sync + Clone;
+    fn wrap_as_sampling_subject<A>(&self) -> KeepAliveSample<A>
+        where L: SamplingSubject<A>, A: Send + Sync + Clone;
+    fn wrap_into_sampling_subject<A>(self) -> KeepAliveSample<A>
+        where L: SamplingSubject<A>, A: Send + Sync + Clone;
 }
 
 impl<L> WrapArc<L> for Arc<RwLock<L>> {
@@ -80,10 +92,28 @@ impl<L> WrapArc<L> for Arc<RwLock<L>> {
         WeakListenerWrapper::boxed(self)
     }
 
-    fn wrap_as_subject<A>(&self) -> Box<Subject<A> + 'static>
-        where L: Subject<A>, A: Send + Sync
+    fn wrap_as_subject<A>(&self) -> KeepAlive<A>
+        where L: Subject<A>, A: Send + Sync + Clone
     {
-        StrongSubjectWrapper::boxed(self)
+        Arc::new(RwLock::new(Box::new(StrongSubjectWrapper { arc: self.clone() })))
+    }
+
+    fn wrap_into_subject<A>(self) -> KeepAlive<A>
+        where L: Subject<A>, A: Send + Sync + Clone
+    {
+        Arc::new(RwLock::new(Box::new(StrongSubjectWrapper { arc: self })))
+    }
+
+    fn wrap_as_sampling_subject<A>(&self) -> KeepAliveSample<A>
+        where L: SamplingSubject<A>, A: Send + Sync + Clone
+    {
+        Arc::new(RwLock::new(Box::new(StrongSubjectWrapper { arc: self.clone() })))
+    }
+
+    fn wrap_into_sampling_subject<A>(self) -> KeepAliveSample<A>
+        where L: SamplingSubject<A>, A: Send + Sync + Clone
+    {
+        Arc::new(RwLock::new(Box::new(StrongSubjectWrapper { arc: self })))
     }
 }
 
@@ -96,6 +126,11 @@ pub trait Subject<A>: Send + Sync {
 pub trait Sample<A> {
     fn sample(&self) -> A;
 }
+
+
+pub trait SamplingSubject<A>: Sample<A> + Subject<A> {}
+
+impl<A, T: Sample<A> + Subject<A>> SamplingSubject<A> for T {}
 
 
 pub struct Source<A> {
@@ -140,11 +175,11 @@ pub struct Mapper<A, B, F: Fn(A) -> B> {
     func: F,
     source: Source<B>,
     #[allow(dead_code)]
-    keep_alive: Box<Subject<A> + 'static>,
+    keep_alive: KeepAlive<A>,
 }
 
 impl<A, B, F: Fn(A) -> B> Mapper<A, B, F> {
-    pub fn new(func: F, keep_alive: Box<Subject<A> + 'static>) -> Mapper<A, B, F> {
+    pub fn new(func: F, keep_alive: KeepAlive<A>) -> Mapper<A, B, F> {
         Mapper { func: func, source: Source::new(), keep_alive: keep_alive }
     }
 }
@@ -174,11 +209,11 @@ pub struct Filter<A, F> {
     func: F,
     source: Source<A>,
     #[allow(dead_code)]
-    keep_alive: Box<Subject<A> + 'static>,
+    keep_alive: KeepAlive<A>,
 }
 
 impl<A, F> Filter<A, F> {
-    pub fn new(f: F, keep_alive: Box<Subject<A> + 'static>) -> Filter<A, F> {
+    pub fn new(f: F, keep_alive: KeepAlive<A>) -> Filter<A, F> {
         Filter { source: Source::new(), func: f, keep_alive: keep_alive }
     }
 }
@@ -207,11 +242,11 @@ pub struct Holder<A> {
     current: A,
     source: Source<A>,
     #[allow(dead_code)]
-    keep_alive: Box<Subject<A> + 'static>,
+    keep_alive: KeepAlive<A>,
 }
 
 impl<A> Holder<A> {
-    pub fn new(initial: A, keep_alive: Box<Subject<A> + 'static>) -> Holder<A> {
+    pub fn new(initial: A, keep_alive: KeepAlive<A>) -> Holder<A> {
         Holder { current: initial, source: Source::new(), keep_alive: keep_alive }
     }
 }
@@ -238,11 +273,11 @@ pub struct Snapper<A, B> {
     current: A,
     source: Source<(A, B)>,
     #[allow(dead_code)]
-    keep_alive: (Box<Subject<A> + 'static>, Box<Subject<B> + 'static>),
+    keep_alive: (KeepAliveSample<A>, KeepAlive<B>),
 }
 
 impl<A, B> Snapper<A, B> {
-    pub fn new(initial: A, keep_alive: (Box<Subject<A> + 'static>, Box<Subject<B> + 'static>)) -> Snapper<A, B> {
+    pub fn new(initial: A, keep_alive: (KeepAliveSample<A>, KeepAlive<B>)) -> Snapper<A, B> {
         Snapper { current: initial, source: Source::new(), keep_alive: keep_alive }
     }
 }
@@ -263,11 +298,11 @@ impl<A: Send + Sync, B: Send + Sync> Subject<(A, B)> for Snapper<A, B> {
 pub struct Merger<A> {
     source: Source<A>,
     #[allow(dead_code)]
-    keep_alive: [Box<Subject<A> + 'static>; 2],
+    keep_alive: [KeepAlive<A>; 2],
 }
 
 impl<A> Merger<A> {
-    pub fn new(keep_alive: [Box<Subject<A> + 'static>; 2]) -> Merger<A> {
+    pub fn new(keep_alive: [KeepAlive<A>; 2]) -> Merger<A> {
         Merger { source: Source::new(), keep_alive: keep_alive }
     }
 }
@@ -308,32 +343,33 @@ impl<A: Send + Sync, B: Send + Sync> Listener<A> for WeakSnapperWrapper<A, B> {
 }
 
 
-pub struct BehaviourSwitcher<A, Be> {
+pub struct BehaviourSwitcher<A> {
     current: A,
     source: Source<A>,
     #[allow(dead_code)]
-    keep_alive: Box<Subject<Be> + 'static>,
+    keep_alive: KeepAliveSample<Behaviour<A>>,
 }
 
-impl<A, Be> BehaviourSwitcher<A, Be> {
-    pub fn new(initial: A, keep_alive: Box<Subject<Be> + 'static>) -> BehaviourSwitcher<A, Be> {
+impl<A> BehaviourSwitcher<A> {
+    pub fn new(initial: A, keep_alive: KeepAliveSample<Behaviour<A>>) -> BehaviourSwitcher<A> {
         BehaviourSwitcher { current: initial, source: Source::new(), keep_alive: keep_alive }
     }
 }
 
-impl<A: Send + Sync + Clone, Be: Behaviour<A>> Listener<Be> for BehaviourSwitcher<A, Be> {
-    fn accept(&mut self, b: Be) -> ListenerResult {
-        self.source.accept(b.sample())
+impl<A: Send + Sync + Clone> Listener<Behaviour<A>> for BehaviourSwitcher<A> {
+    fn accept(&mut self, b: Behaviour<A>) -> ListenerResult {
+        self.current = b.sample();
+        self.source.accept(self.current.clone())
     }
 }
 
-impl<A: Send + Sync + Clone, Be: Behaviour<A>> Subject<A> for BehaviourSwitcher<A, Be> {
+impl<A: Send + Sync + Clone> Subject<A> for BehaviourSwitcher<A> {
     fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
         self.source.listen(listener);
     }
 }
 
-impl<A: Clone, Be> Sample<A> for BehaviourSwitcher<A, Be> {
+impl<A: Clone> Sample<A> for BehaviourSwitcher<A> {
     fn sample(&self) -> A {
         self.current.clone()
     }
@@ -343,11 +379,11 @@ impl<A: Clone, Be> Sample<A> for BehaviourSwitcher<A, Be> {
 pub struct Receiver<A> {
     buffer: RingBuf<A>,
     #[allow(dead_code)]
-    keep_alive: Box<Subject<A> + 'static>,
+    keep_alive: KeepAlive<A>,
 }
 
 impl<A> Receiver<A> {
-    pub fn new(keep_alive: Box<Subject<A> + 'static>) -> Receiver<A> {
+    pub fn new(keep_alive: KeepAlive<A>) -> Receiver<A> {
         Receiver { buffer: RingBuf::new(), keep_alive: keep_alive }
     }
 }
@@ -436,7 +472,9 @@ mod test {
     fn snapper() {
         let src1 = Arc::new(RwLock::new(Source::new()));
         let src2 = Arc::new(RwLock::new(Source::new()));
-        let snapper = Arc::new(RwLock::new(Snapper::new(3, (src1.wrap_as_subject(), src2.wrap_as_subject()))));
+        let holder = Arc::new(RwLock::new(Holder::new(1, src1.wrap_as_subject())));
+        src1.write().unwrap().listen(holder.wrap_as_listener());
+        let snapper = Arc::new(RwLock::new(Snapper::new(3, (holder.wrap_as_sampling_subject(), src2.wrap_as_subject()))));
         src1.write().unwrap().listen(WeakSnapperWrapper::boxed(&snapper));
         src2.write().unwrap().listen(snapper.wrap_as_listener());
         let recv = Arc::new(RwLock::new(Receiver::new(snapper.wrap_as_subject())));

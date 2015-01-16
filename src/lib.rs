@@ -1,7 +1,6 @@
 #![allow(unstable)]
 
-pub use primitives::{Event, Sink};
+pub use primitives::{Event, Behaviour, Sink};
 
 mod subject;
 mod primitives;
-mod behaviour;
