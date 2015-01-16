@@ -8,29 +8,26 @@ pub trait HasSource<A> {
     fn source(&self) -> &Arc<RwLock<Self::Source<A>>>;
 }
 
-pub trait Event<A: Send + Sync + Clone>: HasSource<A> {
+pub trait Event<A: Send + Sync + Clone>: HasSource<A> + Sized {
     fn map<B, F>(&self, f: F) -> Map<A, B, F>
         where B: Send + Sync + Clone,
               F: Fn(A) -> B + Send + Sync,
     {
-        Map::new(&mut *self.source().write().unwrap(), f)
+        Map::new(self, f)
     }
 
     fn filter<F>(&self, f: F) -> Filter<A, F>
         where F: Fn(&A) -> bool + Send + Sync,
     {
-        Filter::new(&mut *self.source().write().unwrap(), f)
+        Filter::new(self, f)
     }
 
     fn merge<E: Event<A>>(&self, other: &E) -> Merge<A> {
-        Merge::new(
-            &mut *self.source().write().unwrap(),
-            &mut *other.source().write().unwrap(),
-        )
+        Merge::new(self, other)
     }
 
     fn iter(&self) -> Iter<A> {
-        Iter::new(&mut *self.source().write().unwrap())
+        Iter::new(self)
     }
 }
 
@@ -71,9 +68,9 @@ impl<A, B, F> Map<A, B, F>
           B: Send + Sync + Clone,
           F: Fn(A) -> B + Send + Sync,
 {
-    fn new<S: Subject<A>>(sub: &mut S, f: F) -> Map<A, B, F> {
+    fn new<E: Event<A>>(event: &E, f: F) -> Map<A, B, F> {
         let map = Map { mapper: Arc::new(RwLock::new(Mapper::new(f))) };
-        sub.listen(map.mapper.wrap());
+        event.source().write().unwrap().listen(map.mapper.wrap());
         map
     }
 }
@@ -99,11 +96,11 @@ impl<A, F> Filter<A, F>
     where A: Send + Sync + Clone,
           F: Fn(&A) -> bool + Send + Sync,
 {
-    fn new<S: Subject<A>>(sub: &mut S, f: F) -> Filter<A, F> {
+    fn new<E: Event<A>>(event: &E, f: F) -> Filter<A, F> {
         let filter = Filter {
             filter: Arc::new(RwLock::new(subject::Filter::new(f)))
         };
-        sub.listen(filter.filter.wrap());
+        event.source().write().unwrap().listen(filter.filter.wrap());
         filter
     }
 }
@@ -128,12 +125,12 @@ pub struct Merge<A> {
 impl<A> Merge<A>
     where A: Send + Sync + Clone,
 {
-    fn new<S1: Subject<A>, S2: Subject<A>>(sub1: &mut S1, sub2: &mut S2) -> Merge<A> {
+    fn new<E1: Event<A>, E2: Event<A>>(event1: &E1, event2: &E2) -> Merge<A> {
         let merge = Merge {
             source: Arc::new(RwLock::new(Source::new()))
         };
-        sub1.listen(merge.source.wrap());
-        sub2.listen(merge.source.wrap());
+        event1.source().write().unwrap().listen(merge.source.wrap());
+        event2.source().write().unwrap().listen(merge.source.wrap());
         merge
     }
 }
@@ -154,9 +151,9 @@ pub struct Iter<A> {
 }
 
 impl<A: Send + Sync + Clone> Iter<A> {
-    fn new<S: Subject<A>>(sub: &mut S) -> Iter<A> {
+    fn new<E: Event<A>>(event: &E) -> Iter<A> {
         let iter = Iter { recv: Arc::new(RwLock::new(Receiver::new())) };
-        sub.listen(iter.recv.wrap());
+        event.source().write().unwrap().listen(iter.recv.wrap());
         iter
     }
 }
