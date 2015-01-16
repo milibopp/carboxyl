@@ -2,6 +2,7 @@
 
 use std::sync::{Arc, RwLock, Weak};
 use std::collections::RingBuf;
+use behaviour::Behaviour;
 
 
 #[derive(Show)]
@@ -89,6 +90,11 @@ impl<L> WrapArc<L> for Arc<RwLock<L>> {
 
 pub trait Subject<A>: Send + Sync {
     fn listen(&mut self, listener: Box<Listener<A> + 'static>);
+}
+
+
+pub trait Sample<A> {
+    fn sample(&self) -> A;
 }
 
 
@@ -210,8 +216,8 @@ impl<A> Holder<A> {
     }
 }
 
-impl<A: Clone> Holder<A> {
-    pub fn current(&self) -> A { self.current.clone() }
+impl<A: Clone> Sample<A> for Holder<A> {
+    fn sample(&self) -> A { self.current.clone() }
 }
 
 impl<A: Send + Sync> Subject<A> for Holder<A> {
@@ -298,6 +304,32 @@ impl<A: Send + Sync, B: Send + Sync> Listener<A> for WeakSnapperWrapper<A, B> {
             },
             None => Err(ListenerError::Disappeared),
         }
+    }
+}
+
+
+pub struct BehaviourSwitcher<A, Be> {
+    current: A,
+    source: Source<A>,
+    #[allow(dead_code)]
+    keep_alive: Box<Subject<Be> + 'static>,
+}
+
+impl<A, Be> BehaviourSwitcher<A, Be> {
+    pub fn new(initial: A, keep_alive: Box<Subject<Be> + 'static>) -> BehaviourSwitcher<A, Be> {
+        BehaviourSwitcher { current: initial, source: Source::new(), keep_alive: keep_alive }
+    }
+}
+
+impl<A: Send + Sync + Clone, Be: Behaviour<A>> Listener<Be> for BehaviourSwitcher<A, Be> {
+    fn accept(&mut self, b: Be) -> ListenerResult {
+        self.source.accept(b.sample())
+    }
+}
+
+impl<A: Send + Sync + Clone, Be: Behaviour<A>> Subject<A> for BehaviourSwitcher<A, Be> {
+    fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
+        self.source.listen(listener);
     }
 }
 
@@ -389,9 +421,9 @@ mod test {
         let src = Arc::new(RwLock::new(Source::new()));
         let holder = Arc::new(RwLock::new(Holder::new(1, src.wrap_as_subject())));
         src.write().unwrap().listen(holder.wrap_as_listener());
-        assert_eq!(holder.write().unwrap().current(), 1);
+        assert_eq!(holder.write().unwrap().sample(), 1);
         src.write().unwrap().send(3);
-        assert_eq!(holder.write().unwrap().current(), 3);
+        assert_eq!(holder.write().unwrap().sample(), 3);
     }
 
     #[test]
