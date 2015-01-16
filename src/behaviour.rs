@@ -1,10 +1,16 @@
 use std::sync::{Arc, RwLock};
 use subject::{Subject, Holder, WrapListener};
-use primitives::{Event, HasSource};
+use primitives::{Event, HasSource, Snapshot};
 
 
-pub trait Behaviour<A: Send + Sync + Clone>: HasSource<A> {
+pub trait Behaviour<A: Send + Sync + Clone>: HasSource<A> + Sized {
     fn sample(&self) -> A;
+
+    fn snapshot<B, E>(&self, event: &E) -> Snapshot<A, B>
+        where B: Send + Sync + Clone, E: Event<B>
+    {
+        Snapshot::new(self, event)
+    }
 }
 
 
@@ -47,5 +53,21 @@ mod test {
         assert_eq!(ba.sample(), 3);
         ea.send(4);
         assert_eq!(ba.sample(), 4);
+    }
+
+    #[test]
+    fn snapshot() {
+        let ev1 = Sink::new();
+        let beh1 = ev1.hold(5);
+        let ev2 = Sink::new();
+        let snap = beh1.snapshot(&ev2);
+        let mut iter = snap.iter();
+        assert_eq!(iter.next(), None);
+        ev2.send(4);
+        assert_eq!(iter.next(), Some((5, 4)));
+        ev1.send(-2);
+        assert_eq!(iter.next(), None);
+        ev2.send(6);
+        assert_eq!(iter.next(), Some((-2, 6)));
     }
 }

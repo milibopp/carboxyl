@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock, Weak};
 use std::collections::RingBuf;
 
 
+#[derive(Show)]
 pub enum ListenerError {
     Disappeared,
     Poisoned,
@@ -213,13 +214,15 @@ impl<A: Send + Sync, B: Send + Sync> SnapperWrapper<A, B> {
 
 impl<A: Send + Sync, B: Send + Sync> Listener<A> for SnapperWrapper<A, B> {
     fn accept(&mut self, a: A) -> ListenerResult {
-        match self.weak.upgrade() {
+        let x = match self.weak.upgrade() {
             Some(arc) => match arc.write() {
                 Ok(mut snapper) => { snapper.current = a; Ok(()) },
                 Err(_) => Err(ListenerError::Poisoned),
             },
             None => Err(ListenerError::Disappeared),
-        }
+        };
+        println!("{:?}", x);
+        x
     }
 }
 
