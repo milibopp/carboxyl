@@ -12,7 +12,7 @@ pub trait HasSource<A> {
     fn source(&self) -> &Arc<RwLock<Self::Source<A>>>;
 }
 
-pub trait Event<A: Send + Sync + Clone>: HasSource<A> + Sized + Clone {
+pub trait Event<A: Send + Sync + Clone>: HasSource<A> + Sized + Clone + Send + Sync {
     fn map<B, F>(&self, f: F) -> Map<A, B, F>
         where B: Send + Sync + Clone,
               F: Fn(A) -> B + Send + Sync,
@@ -39,7 +39,7 @@ pub trait Event<A: Send + Sync + Clone>: HasSource<A> + Sized + Clone {
     }
 }
 
-impl<A: Send + Sync + Clone, T: HasSource<A> + Clone> Event<A> for T {}
+impl<A: Send + Sync + Clone, T: HasSource<A> + Clone + Send + Sync> Event<A> for T {}
 
 
 pub struct Sink<A> {

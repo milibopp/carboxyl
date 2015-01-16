@@ -1,9 +1,9 @@
 use std::sync::{Arc, RwLock};
-use subject::{Subject, Holder, WrapArc};
+use subject::{Subject, Holder, WrapArc, Sample};
 use primitives::{Event, HasSource, Snapshot};
 
 
-pub trait Behaviour<A: Send + Sync + Clone>: HasSource<A> + Sized + Clone {
+pub trait Behaviour<A: Send + Sync + Clone>: HasSource<A> + Sized + Clone + Send + Sync {
     fn sample(&self) -> A;
 
     fn snapshot<B, E>(&self, event: &E) -> Snapshot<A, B>
@@ -46,7 +46,7 @@ impl<A: Send + Sync> HasSource<A> for Hold<A> {
 
 impl<A: Send + Sync + Clone> Behaviour<A> for Hold<A> {
     fn sample(&self) -> A {
-        self.holder.write().unwrap().current()
+        self.holder.write().unwrap().sample()
     }
 }
 
