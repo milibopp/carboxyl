@@ -190,6 +190,52 @@ impl<A: Send + Sync + Clone> Listener<A> for Holder<A> {
 }
 
 
+pub struct Snapper<A, B> {
+    current: A,
+    source: Source<(A, B)>,
+}
+
+impl<A, B> Snapper<A, B> {
+    pub fn new(initial: A) -> Snapper<A, B> {
+        Snapper { current: initial, source: Source::new() }
+    }
+}
+
+pub struct SnapperWrapper<A, B> {
+    weak: Weak<RwLock<Snapper<A, B>>>,
+}
+
+impl<A: Send + Sync, B: Send + Sync> SnapperWrapper<A, B> {
+    pub fn boxed(strong: &Arc<RwLock<Snapper<A, B>>>) -> Box<Listener<A> + 'static> {
+        Box::new(SnapperWrapper { weak: strong.downgrade() })
+    }
+}
+
+impl<A: Send + Sync, B: Send + Sync> Listener<A> for SnapperWrapper<A, B> {
+    fn accept(&mut self, a: A) -> ListenerResult {
+        match self.weak.upgrade() {
+            Some(arc) => match arc.write() {
+                Ok(mut snapper) => { snapper.current = a; Ok(()) },
+                Err(_) => Err(ListenerError::Poisoned),
+            },
+            None => Err(ListenerError::Disappeared),
+        }
+    }
+}
+
+impl<A: Send + Sync + Clone, B: Send + Sync + Clone> Listener<B> for Snapper<A, B> {
+    fn accept(&mut self, b: B) -> ListenerResult {
+        self.source.accept((self.current.clone(), b))
+    }
+}
+
+impl<A: Send + Sync, B: Send + Sync> Subject<(A, B)> for Snapper<A, B> {
+    fn listen(&mut self, listener: Box<Listener<(A, B)> + 'static>) {
+        self.source.listen(listener);
+    }
+}
+
+
 pub struct Receiver<A> {
     buffer: RingBuf<A>,
 }
@@ -278,5 +324,22 @@ mod test {
         assert_eq!(holder.write().unwrap().current(), 1);
         src.send(3);
         assert_eq!(holder.write().unwrap().current(), 3);
+    }
+
+    #[test]
+    fn snapper() {
+        let mut src1 = Source::new();
+        let mut src2 = Source::new();
+        let snapper = Arc::new(RwLock::new(Snapper::new(3)));
+        src1.listen(SnapperWrapper::boxed(&snapper));
+        src2.listen(snapper.wrap());
+        let recv = Arc::new(RwLock::new(Receiver::new()));
+        snapper.write().unwrap().listen(recv.wrap());
+        src2.send(6);
+        assert_eq!(recv.write().unwrap().next(), Some((3, 6)));
+        src1.send(5);
+        assert_eq!(recv.write().unwrap().next(), None);
+        src2.send(-4);
+        assert_eq!(recv.write().unwrap().next(), Some((5, -4)));
     }
 }
