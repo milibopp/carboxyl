@@ -1,5 +1,6 @@
 use std::sync::{Arc, RwLock};
 use subject::{self, Subject, Source, Mapper, Receiver, WrapListener};
+use behaviour::Hold;
 
 
 pub trait HasSource<A> {
@@ -28,6 +29,10 @@ pub trait Event<A: Send + Sync + Clone>: HasSource<A> + Sized {
 
     fn iter(&self) -> Iter<A> {
         Iter::new(self)
+    }
+
+    fn hold(&self, initial: A) -> Hold<A> {
+        Hold::new(initial, self)
     }
 }
 

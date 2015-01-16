@@ -161,6 +161,35 @@ impl<A, F> Listener<A> for Filter<A, F>
 }
 
 
+pub struct Holder<A> {
+    current: A,
+    source: Source<A>,
+}
+
+impl<A> Holder<A> {
+    pub fn new(initial: A) -> Holder<A> {
+        Holder { current: initial, source: Source::new() }
+    }
+}
+
+impl<A: Clone> Holder<A> {
+    pub fn current(&self) -> A { self.current.clone() }
+}
+
+impl<A: Send + Sync> Subject<A> for Holder<A> {
+    fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
+        self.source.listen(listener);
+    }
+}
+
+impl<A: Send + Sync + Clone> Listener<A> for Holder<A> {
+    fn accept(&mut self, a: A) -> ListenerResult {
+        self.current = a.clone();
+        self.source.accept(a)
+    }
+}
+
+
 pub struct Receiver<A> {
     buffer: RingBuf<A>,
 }
@@ -239,5 +268,15 @@ mod test {
         src.send(1);
         src.send(3);
         assert_eq!(recv.write().unwrap().next(), Some(3));
+    }
+
+    #[test]
+    fn holder() {
+        let mut src = Source::new();
+        let holder = Arc::new(RwLock::new(Holder::new(1)));
+        src.listen(holder.wrap());
+        assert_eq!(holder.write().unwrap().current(), 1);
+        src.send(3);
+        assert_eq!(holder.write().unwrap().current(), 3);
     }
 }
