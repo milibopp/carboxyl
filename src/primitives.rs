@@ -1,6 +1,9 @@
 use std::sync::{Arc, RwLock};
-use subject::{self, Subject, Source, Mapper, Receiver, WrapListener};
-use behaviour::Hold;
+use subject::{
+    self, Subject, Source, Mapper, Receiver, WrapListener, Snapper,
+    SnapperWrapper,
+};
+use behaviour::{Behaviour, Hold};
 
 
 pub trait HasSource<A> {
@@ -73,7 +76,7 @@ impl<A, B, F> Map<A, B, F>
           B: Send + Sync + Clone,
           F: Fn(A) -> B + Send + Sync,
 {
-    fn new<E: Event<A>>(event: &E, f: F) -> Map<A, B, F> {
+    pub fn new<E: Event<A>>(event: &E, f: F) -> Map<A, B, F> {
         let map = Map { mapper: Arc::new(RwLock::new(Mapper::new(f))) };
         event.source().write().unwrap().listen(map.mapper.wrap());
         map
@@ -101,7 +104,7 @@ impl<A, F> Filter<A, F>
     where A: Send + Sync + Clone,
           F: Fn(&A) -> bool + Send + Sync,
 {
-    fn new<E: Event<A>>(event: &E, f: F) -> Filter<A, F> {
+    pub fn new<E: Event<A>>(event: &E, f: F) -> Filter<A, F> {
         let filter = Filter {
             filter: Arc::new(RwLock::new(subject::Filter::new(f)))
         };
@@ -126,11 +129,10 @@ pub struct Merge<A> {
     source: Arc<RwLock<Source<A>>>,
 }
 
-
 impl<A> Merge<A>
     where A: Send + Sync + Clone,
 {
-    fn new<E1: Event<A>, E2: Event<A>>(event1: &E1, event2: &E2) -> Merge<A> {
+    pub fn new<E1: Event<A>, E2: Event<A>>(event1: &E1, event2: &E2) -> Merge<A> {
         let merge = Merge {
             source: Arc::new(RwLock::new(Source::new()))
         };
@@ -148,6 +150,33 @@ impl<A> HasSource<A> for Merge<A>
     fn source(&self) -> &Arc<RwLock<Source<A>>> {
         &self.source
     }
+}
+
+
+pub struct Snapshot<A, B> {
+    source: Arc<RwLock<Snapper<A, B>>>,
+}
+
+impl<A, B> Snapshot<A, B>
+    where A: Send + Sync + Clone, B: Send + Sync + Clone
+{
+    pub fn new<Be: Behaviour<A>, Ev: Event<B>>(behaviour: &Be, event: &Ev) -> Snapshot<A, B> {
+        let snap = Snapshot {
+            source: Arc::new(RwLock::new(Snapper::new(behaviour.sample())))
+        };
+        behaviour.source().write().unwrap()
+            .listen(SnapperWrapper::boxed(&snap.source));
+        event.source().write().unwrap().listen(snap.source.wrap());
+        snap
+    }
+}
+
+impl<A, B> HasSource<(A, B)> for Snapshot<A, B>
+    where A: Send + Sync, B: Send + Sync
+{
+    type Source = Snapper<A, B>;
+
+    fn source(&self) -> &Arc<RwLock<Snapper<A, B>>> { &self.source }
 }
 
 
