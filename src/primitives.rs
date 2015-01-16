@@ -214,6 +214,7 @@ impl<A: Send + Sync> Iterator for Iter<A> {
 
 #[cfg(test)]
 mod test {
+    use behaviour::Behaviour;
     use super::*;
 
     #[test]
@@ -285,5 +286,14 @@ mod test {
         sink2.send(3);
         assert_eq!(iter.next(), Some(16));
         assert_eq!(iter.next(), Some(15));
+    }
+
+    #[test]
+    fn snapshot() {
+        let sink1: Sink<i32> = Sink::new();
+        let sink2: Sink<f64> = Sink::new();
+        let mut snap_iter = sink1.hold(1).snapshot(&sink2.map(|x| x + 3.0)).iter();
+        sink2.send(4.0);
+        assert_eq!(snap_iter.next(), Some((1, 7.0)));
     }
 }
