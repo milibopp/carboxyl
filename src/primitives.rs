@@ -12,7 +12,7 @@ pub trait HasSource<A> {
     fn source(&self) -> &Arc<RwLock<Self::Source<A>>>;
 }
 
-pub trait Event<A: Send + Sync + Clone>: HasSource<A> + Sized {
+pub trait Event<A: Send + Sync + Clone>: HasSource<A> + Sized + Clone {
     fn map<B, F>(&self, f: F) -> Map<A, B, F>
         where B: Send + Sync + Clone,
               F: Fn(A) -> B + Send + Sync,
@@ -39,11 +39,17 @@ pub trait Event<A: Send + Sync + Clone>: HasSource<A> + Sized {
     }
 }
 
-impl<A: Send + Sync + Clone, T: HasSource<A>> Event<A> for T {}
+impl<A: Send + Sync + Clone, T: HasSource<A> + Clone> Event<A> for T {}
 
 
 pub struct Sink<A> {
     source: Arc<RwLock<Source<A>>>,
+}
+
+impl<A> Clone for Sink<A> {
+    fn clone(&self) -> Sink<A> {
+        Sink { source: self.source.clone() }
+    }
 }
 
 impl<A: Send> Sink<A> {
@@ -69,6 +75,12 @@ impl<A: Send + Sync + Clone> HasSource<A> for Sink<A> {
 
 pub struct Map<A, B, F> {
     mapper: Arc<RwLock<Mapper<A, B, F>>>,
+}
+
+impl<A, B, F> Clone for Map<A, B, F> {
+    fn clone(&self) -> Map<A, B, F> {
+        Map { mapper: self.mapper.clone() }
+    }
 }
 
 impl<A, B, F> Map<A, B, F>
@@ -102,6 +114,12 @@ pub struct Filter<A, F> {
     filter: Arc<RwLock<subject::Filter<A, F>>>,
 }
 
+impl<A, F> Clone for Filter<A, F> {
+    fn clone(&self) -> Filter<A, F> {
+        Filter { filter: self.filter.clone() }
+    }
+}
+
 impl<A, F> Filter<A, F>
     where A: Send + Sync + Clone,
           F: Fn(&A) -> bool + Send + Sync,
@@ -129,6 +147,12 @@ impl<A, F> HasSource<A> for Filter<A, F>
 
 pub struct Merge<A> {
     source: Arc<RwLock<Merger<A>>>,
+}
+
+impl<A> Clone for Merge<A> {
+    fn clone(&self) -> Merge<A> {
+        Merge { source: self.source.clone() }
+    }
 }
 
 impl<A> Merge<A>
@@ -162,6 +186,12 @@ pub struct Snapshot<A, B> {
     source: Arc<RwLock<Snapper<A, B>>>,
 }
 
+impl<A, B> Clone for Snapshot<A, B> {
+    fn clone(&self) -> Snapshot<A, B> {
+        Snapshot { source: self.source.clone() }
+    }
+}
+
 impl<A, B> Snapshot<A, B>
     where A: Send + Sync + Clone, B: Send + Sync + Clone
 {
@@ -190,6 +220,12 @@ impl<A, B> HasSource<(A, B)> for Snapshot<A, B>
 
 pub struct Iter<A> {
     recv: Arc<RwLock<Receiver<A>>>,
+}
+
+impl<A> Clone for Iter<A> {
+    fn clone(&self) -> Iter<A> {
+        Iter { recv: self.recv.clone() }
+    }
 }
 
 impl<A: Send + Sync + Clone> Iter<A> {
@@ -295,5 +331,13 @@ mod test {
         let mut snap_iter = sink1.hold(1).snapshot(&sink2.map(|x| x + 3.0)).iter();
         sink2.send(4.0);
         assert_eq!(snap_iter.next(), Some((1, 7.0)));
+    }
+
+    #[test]
+    fn clone() {
+        let sink = Sink::new();
+        let b = sink.hold(1);
+        sink.clone().send(3);
+        assert_eq!(b.sample(), 3);
     }
 }
