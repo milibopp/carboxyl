@@ -333,6 +333,12 @@ impl<A: Send + Sync + Clone, Be: Behaviour<A>> Subject<A> for BehaviourSwitcher<
     }
 }
 
+impl<A: Clone, Be> Sample<A> for BehaviourSwitcher<A, Be> {
+    fn sample(&self) -> A {
+        self.current.clone()
+    }
+}
+
 
 pub struct Receiver<A> {
     buffer: RingBuf<A>,
