@@ -20,6 +20,13 @@ pub trait Event<A: Send + Sync + Clone> {
         Filter::new(&mut *self.source().write().unwrap(), f)
     }
 
+    fn merge<E: Event<A>>(&self, other: &E) -> Merge<A> {
+        Merge::new(
+            &mut *self.source().write().unwrap(),
+            &mut *other.source().write().unwrap(),
+        )
+    }
+
     fn iter(&self) -> Iter<A> {
         Iter::new(&mut *self.source().write().unwrap())
     }
@@ -109,6 +116,35 @@ impl<A, F> Event<A> for Filter<A, F>
 }
 
 
+pub struct Merge<A> {
+    source: Arc<RwLock<Source<A>>>,
+}
+
+
+impl<A> Merge<A>
+    where A: Send + Sync + Clone,
+{
+    fn new<S1: Subject<A>, S2: Subject<A>>(sub1: &mut S1, sub2: &mut S2) -> Merge<A> {
+        let merge = Merge {
+            source: Arc::new(RwLock::new(Source::new()))
+        };
+        sub1.listen(merge.source.wrap());
+        sub2.listen(merge.source.wrap());
+        merge
+    }
+}
+
+impl<A> Event<A> for Merge<A>
+    where A: Send + Sync + Clone,
+{
+    type Source = Source<A>;
+
+    fn source(&self) -> &Arc<RwLock<Source<A>>> {
+        &self.source
+    }
+}
+
+
 pub struct Iter<A> {
     recv: Arc<RwLock<Receiver<A>>>,
 }
@@ -159,6 +195,18 @@ mod test {
         let mut iter = small.iter();
         sink.send(12);
         sink.send(9);
+        assert_eq!(iter.next(), Some(9));
+    }
+
+    #[test]
+    fn merge() {
+        let sink1 = Sink::new();
+        let sink2 = Sink::new();
+        let merge = sink1.merge(&sink2);
+        let mut iter = merge.iter();
+        sink1.send(12);
+        sink2.send(9);
+        assert_eq!(iter.next(), Some(12));
         assert_eq!(iter.next(), Some(9));
     }
 }
