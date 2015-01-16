@@ -9,8 +9,10 @@ pub enum ListenerError {
     Poisoned,
 }
 
+pub type ListenerResult = Result<(), ListenerError>;
+
 pub trait Listener<A>: Send + Sync {
-    fn accept(&mut self, a: A) -> Result<(), ListenerError>;
+    fn accept(&mut self, a: A) -> ListenerResult;
 }
 
 pub struct ListenerWrapper<L> {
@@ -28,7 +30,7 @@ impl<L> ListenerWrapper<L> {
 impl<A, L> Listener<A> for ListenerWrapper<L>
     where L: Listener<A> + Send + Sync, A: Send + Sync
 {
-    fn accept(&mut self, a: A) -> Result<(), ListenerError> {
+    fn accept(&mut self, a: A) -> ListenerResult {
         match self.weak.upgrade() {
             Some(listener) => match listener.write() {
                 Ok(mut listener) => listener.accept(a),
@@ -83,6 +85,13 @@ impl<A: Send + Sync + Clone> Source<A> {
     }
 }
 
+impl<A: Send + Sync + Clone> Listener<A> for Source<A> {
+    fn accept(&mut self, a: A) -> ListenerResult {
+        self.send(a);
+        Ok(())
+    }
+}
+
 impl<A: Send + Sync> Subject<A> for Source<A> {
     fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
         self.listeners.push(listener);
@@ -115,9 +124,8 @@ impl<A, B, F> Listener<A> for Mapper<A, B, F>
     where B: Send + Sync + Clone,
           F: Fn(A) -> B + Send + Sync,
 {
-    fn accept(&mut self, a: A) -> Result<(), ListenerError> {
-        self.subject.send((self.func)(a));
-        Ok(())
+    fn accept(&mut self, a: A) -> ListenerResult {
+        self.subject.accept((self.func)(a))
     }
 }
 
@@ -143,11 +151,12 @@ impl<A, F> Listener<A> for Filter<A, F>
     where A: Send + Sync + Clone,
           F: Fn(&A) -> bool + Send + Sync,
 {
-    fn accept(&mut self, a: A) -> Result<(), ListenerError> {
+    fn accept(&mut self, a: A) -> ListenerResult {
         if (self.func)(&a) {
-            self.source.send(a);
+            self.source.accept(a)
+        } else {
+            Ok(())
         }
-        Ok(())
     }
 }
 
@@ -174,7 +183,7 @@ impl<A: Send + Sync> Subject<()> for Receiver<A> {
 }
 
 impl<A: Send + Sync> Listener<A> for Receiver<A> {
-    fn accept(&mut self, a: A) -> Result<(), ListenerError> {
+    fn accept(&mut self, a: A) -> ListenerResult {
         self.buffer.push_back(a);
         Ok(())
     }
