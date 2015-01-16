@@ -1,10 +1,12 @@
 use std::sync::{Arc, RwLock};
-use subject::{Source, Mapper, WrapListener, Subject, Receiver};
+use subject::{self, Source, Mapper, WrapListener, Subject, Receiver};
 
 
 pub trait Event<A> {
     fn map<B, F>(&self, f: F) -> Map<A, B, F>
         where F: Fn(A) -> B;
+    fn filter<F>(&self, f: F) -> Filter<A, F>
+        where F: Fn(&A) -> bool + Send + Sync;
     fn iter(&self) -> Iter<A>;
 }
 
@@ -31,6 +33,12 @@ impl<A: Send + Sync + Clone> Event<A> for Sink<A> {
               F: Fn(A) -> B + Send + Sync,
     {
         Map::new(&mut *self.source.write().unwrap(), f)
+    }
+
+    fn filter<F>(&self, f: F) -> Filter<A, F>
+        where F: Fn(&A) -> bool + Send + Sync,
+    {
+        Filter::new(&mut *self.source.write().unwrap(), f)
     }
 
     fn iter(&self) -> Iter<A> {
@@ -67,8 +75,54 @@ impl<A, B, F> Event<B> for Map<A, B, F>
         Map::new(&mut *self.mapper.write().unwrap(), g)
     }
 
+    fn filter<G>(&self, g: G) -> Filter<B, G>
+        where G: Fn(&B) -> bool + Send + Sync,
+    {
+        Filter::new(&mut *self.mapper.write().unwrap(), g)
+    }
+
     fn iter(&self) -> Iter<B> {
         Iter::new(&mut *self.mapper.write().unwrap())
+    }
+}
+
+
+pub struct Filter<A, F> {
+    filter: Arc<RwLock<subject::Filter<A, F>>>,
+}
+
+impl<A, F> Filter<A, F>
+    where A: Send + Sync + Clone,
+          F: Fn(&A) -> bool + Send + Sync,
+{
+    fn new<S: Subject<A>>(sub: &mut S, f: F) -> Filter<A, F> {
+        let filter = Filter {
+            filter: Arc::new(RwLock::new(subject::Filter::new(f)))
+        };
+        sub.listen(filter.filter.wrap());
+        filter
+    }
+}
+
+impl<A, F> Event<A> for Filter<A, F>
+    where A: Send + Sync + Clone,
+          F: Fn(&A) -> bool + Send + Sync,
+{
+    fn map<B, G>(&self, g: G) -> Map<A, B, G>
+        where B: Send + Sync + Clone,
+              G: Fn(A) -> B + Send + Sync,
+    {
+        Map::new(&mut *self.filter.write().unwrap(), g)
+    }
+
+    fn filter<G>(&self, g: G) -> Filter<A, G>
+        where G: Fn(&A) -> bool + Send + Sync,
+    {
+        Filter::new(&mut *self.filter.write().unwrap(), g)
+    }
+
+    fn iter(&self) -> Iter<A> {
+        Iter::new(&mut *self.filter.write().unwrap())
     }
 }
 
@@ -114,5 +168,15 @@ mod test {
         let mut iter = triple.iter();
         sink.send(1);
         assert_eq!(iter.next(), Some(3));
+    }
+
+    #[test]
+    fn filter() {
+        let sink = Sink::new();
+        let small = sink.filter(|&x: &i32| x < 11);
+        let mut iter = small.iter();
+        sink.send(12);
+        sink.send(9);
+        assert_eq!(iter.next(), Some(9));
     }
 }

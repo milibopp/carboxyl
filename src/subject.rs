@@ -122,6 +122,36 @@ impl<A, B, F> Listener<A> for Mapper<A, B, F>
 }
 
 
+pub struct Filter<A, F> {
+    func: F,
+    source: Source<A>,
+}
+
+impl<A, F> Filter<A, F> {
+    pub fn new(f: F) -> Filter<A, F> {
+        Filter { source: Source::new(), func: f }
+    }
+}
+
+impl<A: Send + Sync, F: Send + Sync> Subject<A> for Filter<A, F> {
+    fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
+        self.source.listen(listener);
+    }
+}
+
+impl<A, F> Listener<A> for Filter<A, F>
+    where A: Send + Sync + Clone,
+          F: Fn(&A) -> bool + Send + Sync,
+{
+    fn accept(&mut self, a: A) -> Result<(), ListenerError> {
+        if (self.func)(&a) {
+            self.source.send(a);
+        }
+        Ok(())
+    }
+}
+
+
 pub struct Receiver<A> {
     buffer: RingBuf<A>,
 }
@@ -188,5 +218,17 @@ mod test {
         src.send(4);
         assert_eq!(r1.write().unwrap().next(), Some(7));
         assert_eq!(r2.write().unwrap().next(), Some(4));
+    }
+
+    #[test]
+    fn filter() {
+        let mut src = Source::new();
+        let filter = Arc::new(RwLock::new(Filter::new(|&:x: &i32| *x > 2)));
+        src.listen(filter.wrap());
+        let recv = Arc::new(RwLock::new(Receiver::new()));
+        filter.write().unwrap().listen(recv.wrap());
+        src.send(1);
+        src.send(3);
+        assert_eq!(recv.write().unwrap().next(), Some(3));
     }
 }
