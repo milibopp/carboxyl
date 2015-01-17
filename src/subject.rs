@@ -145,15 +145,19 @@ impl<A> Source<A> {
 
 impl<A: Send + Sync + Clone> Source<A> {
     pub fn send(&mut self, a: A) {
-        let mut idx_to_remove = vec!();
-        for (k, listener) in self.listeners.iter_mut().enumerate() {
-            if listener.accept(a.clone()).is_err() {
-                idx_to_remove.push(k);
-            }
-        }
-        for k in idx_to_remove.into_iter() {
-            self.listeners.remove(k);
-        }
+        use std::mem;
+        let mut new_listeners = vec!();
+        mem::swap(&mut new_listeners, &mut self.listeners);
+        self.listeners = new_listeners
+            .into_iter()
+            .filter_map(|mut listener| {
+                let result = listener.accept(a.clone());
+                match result {
+                    Ok(_) => Some(listener),
+                    Err(_) => None,
+                }
+            })
+            .collect();
     }
 }
 
