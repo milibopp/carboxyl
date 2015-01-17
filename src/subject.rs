@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, RwLock, Weak};
 use std::collections::RingBuf;
-use primitives::Behaviour;
+use primitives::Cell;
 
 
 #[derive(Show)]
@@ -343,33 +343,33 @@ impl<A: Send + Sync, B: Send + Sync> Listener<A> for WeakSnapperWrapper<A, B> {
 }
 
 
-pub struct BehaviourSwitcher<A> {
+pub struct CellSwitcher<A> {
     current: A,
     source: Source<A>,
     #[allow(dead_code)]
-    keep_alive: KeepAliveSample<Behaviour<A>>,
+    keep_alive: KeepAliveSample<Cell<A>>,
 }
 
-impl<A> BehaviourSwitcher<A> {
-    pub fn new(initial: A, keep_alive: KeepAliveSample<Behaviour<A>>) -> BehaviourSwitcher<A> {
-        BehaviourSwitcher { current: initial, source: Source::new(), keep_alive: keep_alive }
+impl<A> CellSwitcher<A> {
+    pub fn new(initial: A, keep_alive: KeepAliveSample<Cell<A>>) -> CellSwitcher<A> {
+        CellSwitcher { current: initial, source: Source::new(), keep_alive: keep_alive }
     }
 }
 
-impl<A: Send + Sync + Clone> Listener<Behaviour<A>> for BehaviourSwitcher<A> {
-    fn accept(&mut self, b: Behaviour<A>) -> ListenerResult {
+impl<A: Send + Sync + Clone> Listener<Cell<A>> for CellSwitcher<A> {
+    fn accept(&mut self, b: Cell<A>) -> ListenerResult {
         self.current = b.sample();
         self.source.accept(self.current.clone())
     }
 }
 
-impl<A: Send + Sync + Clone> Subject<A> for BehaviourSwitcher<A> {
+impl<A: Send + Sync + Clone> Subject<A> for CellSwitcher<A> {
     fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
         self.source.listen(listener);
     }
 }
 
-impl<A: Clone> Sample<A> for BehaviourSwitcher<A> {
+impl<A: Clone> Sample<A> for CellSwitcher<A> {
     fn sample(&self) -> A {
         self.current.clone()
     }
