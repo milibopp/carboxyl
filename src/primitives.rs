@@ -379,4 +379,15 @@ mod test {
         let x = 3;
         sink.stream().map(move |y| y + x);
     }
+
+    #[bench]
+    fn bench_chain(b: &mut Bencher) {
+        let sink: Sink<i32> = Sink::new();
+        let cell = sink.stream()
+            .map(|x| x + 4)
+            .filter(|&x| x < 4)
+            .merge(&sink.stream().map(|x| x * 5))
+            .hold(15);
+        b.iter(|| sink.send(-5));
+    }
 }
