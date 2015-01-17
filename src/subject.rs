@@ -76,7 +76,7 @@ pub trait WrapArc<L> {
     fn wrap_as_listener<A>(&self) -> Box<Listener<A> + 'static>
         where L: Listener<A>, A: Send + Sync;
     fn wrap_as_subject<A>(&self) -> KeepAlive<A>
-        where L: Subject<A>, A: Send + Sync;
+        where L: Subject<A>, A: Send + Sync + Clone;
     fn wrap_into_subject<A>(self) -> KeepAlive<A>
         where L: Subject<A>, A: Send + Sync + Clone;
     fn wrap_as_sampling_subject<A>(&self) -> KeepAliveSample<A>

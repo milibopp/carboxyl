@@ -383,7 +383,7 @@ mod test {
     #[bench]
     fn bench_chain(b: &mut Bencher) {
         let sink: Sink<i32> = Sink::new();
-        let cell = sink.stream()
+        let _ = sink.stream()
             .map(|x| x + 4)
             .filter(|&x| x < 4)
             .merge(&sink.stream().map(|x| x * 5))
