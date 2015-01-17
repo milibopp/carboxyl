@@ -26,6 +26,9 @@
 #![allow(unstable)]
 #![warn(missing_docs)]
 
+#[cfg(test)]
+extern crate test;
+
 pub use primitives::{Stream, Cell, Sink, lift2};
 
 mod subject;
