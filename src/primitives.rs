@@ -1,7 +1,8 @@
 use std::sync::{Arc, RwLock};
 use subject::{
     Subject, Source, Mapper, Receiver, WrapArc, Snapper, Merger, Filter,
-    WeakSnapperWrapper, SamplingSubject, Holder, BehaviourSwitcher
+    WeakSnapperWrapper, SamplingSubject, Holder, BehaviourSwitcher, Lift2,
+    WeakLift2Wrapper
 };
 
 
@@ -115,6 +116,21 @@ impl<A: Send + Sync + Clone> Behaviour<Behaviour<A>> {
         self.source.write().unwrap().listen(source.wrap_as_listener());
         Behaviour { source: source.wrap_into_sampling_subject() }
     }
+}
+
+
+pub fn lift2<A, B, C, F>(f: F, ba: &Behaviour<A>, bb: &Behaviour<B>) -> Behaviour<C>
+    where A: Send + Sync + Clone,
+          B: Send + Sync + Clone,
+          C: Send + Sync + Clone,
+          F: Fn(A, B) -> C + Send + Sync,
+{
+    let source = Arc::new(RwLock::new(Lift2::new(
+        (ba.sample(), bb.sample()), f, (ba.source.clone(), bb.source.clone())
+    )));
+    ba.source.write().unwrap().listen(source.wrap_as_listener());
+    bb.source.write().unwrap().listen(WeakLift2Wrapper::boxed(&source));
+    Behaviour { source: source.wrap_into_sampling_subject() }
 }
 
 
@@ -256,6 +272,18 @@ mod test {
         assert_eq!(iter.next(), None);
         ev2.send(6);
         assert_eq!(iter.next(), Some((-2, 6)));
+    }
+
+    #[test]
+    fn lift2_test() {
+        let sink1 = Sink::new();
+        let sink2 = Sink::new();
+        let lifted = lift2(|a, b| a + b, &sink1.event().hold(0), &sink2.event().hold(3));
+        assert_eq!(lifted.sample(), 3);
+        sink1.send(1);
+        assert_eq!(lifted.sample(), 4);
+        sink2.send(11);
+        assert_eq!(lifted.sample(), 12);
     }
 
     #[test]

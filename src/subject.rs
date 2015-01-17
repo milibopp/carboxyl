@@ -376,6 +376,101 @@ impl<A: Clone> Sample<A> for BehaviourSwitcher<A> {
 }
 
 
+pub struct Lift2<A, B, C, F> {
+    current: (A, B),
+    f: F,
+    source: Source<C>,
+    #[allow(dead_code)]
+    keep_alive: (KeepAliveSample<A>, KeepAliveSample<B>),
+}
+
+impl<A, B, C: Send + Sync, F> Lift2<A, B, C, F> {
+    pub fn new(initial: (A, B), f: F, keep_alive: (KeepAliveSample<A>, KeepAliveSample<B>))
+        -> Lift2<A, B, C, F>
+    {
+        Lift2 {
+            current: initial,
+            f: f,
+            source: Source::new(),
+            keep_alive: keep_alive
+        }
+    }
+}
+
+impl<A, B, C, F> Subject<C> for Lift2<A, B, C, F>
+    where A: Send + Sync,
+          B: Send + Sync,
+          C: Send + Sync + Clone,
+          F: Send + Sync,
+{
+    fn listen(&mut self, listener: Box<Listener<C> + 'static>) {
+        self.source.listen(listener);
+    }
+}
+
+impl<A, B, C, F> Listener<A> for Lift2<A, B, C, F>
+    where A: Send + Sync + Clone,
+          B: Send + Sync + Clone,
+          C: Send + Sync + Clone,
+          F: Fn(A, B) -> C + Send + Sync,
+{
+    fn accept(&mut self, a: A) -> ListenerResult {
+        self.current.0 = a;
+        let (a, b) = self.current.clone();
+        self.source.accept((self.f)(a, b))
+    }
+}
+
+impl<A, B, C, F> Sample<C> for Lift2<A, B, C, F>
+    where A: Clone,
+          B: Clone,
+          F: Fn(A, B) -> C
+{
+    fn sample(&self) -> C {
+        let (a, b) = self.current.clone();
+        (self.f)(a, b)
+    }
+}
+
+
+pub struct WeakLift2Wrapper<A, B, C, F> {
+    weak: Weak<RwLock<Lift2<A, B, C, F>>>,
+}
+
+impl<A, B, C, F> WeakLift2Wrapper<A, B, C, F>
+    where A: Send + Sync + Clone,
+          B: Send + Sync + Clone,
+          C: Send + Sync + Clone,
+          F: Fn(A, B) -> C + Send + Sync,
+{
+    pub fn boxed(strong: &Arc<RwLock<Lift2<A, B, C, F>>>) -> Box<Listener<B> + 'static> {
+        Box::new(WeakLift2Wrapper { weak: strong.downgrade() })
+    }
+}
+
+impl<A, B, C, F> Listener<B> for WeakLift2Wrapper<A, B, C, F>
+    where A: Send + Sync + Clone,
+          B: Send + Sync + Clone,
+          C: Send + Sync + Clone,
+          F: Fn(A, B) -> C + Send + Sync,
+{
+    fn accept(&mut self, b: B) -> ListenerResult {
+        match self.weak.upgrade() {
+            Some(arc) => match arc.write() {
+                Ok(mut snapper) => {
+                    snapper.current.1 = b;
+                    let (a, b) = snapper.current.clone();
+                    let c = (snapper.f)(a, b);
+                    snapper.source.accept(c)
+                },
+                Err(_) => Err(ListenerError::Poisoned),
+            },
+            None => Err(ListenerError::Disappeared),
+        }
+    }
+}
+
+
 pub struct Receiver<A> {
     buffer: RingBuf<A>,
     #[allow(dead_code)]
