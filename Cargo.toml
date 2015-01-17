@@ -2,3 +2,10 @@
 name = "carboxyl"
 version = "0.0.1"
 authors = ["Eduard Bopp <eduard.bopp@aepsil0n.de>"]
+description = "Library for functional reactive programming"
+documentation = "http://www.rust-ci.org/aepsil0n/carboxyl/doc/carboxyl/"
+homepage = "https://github.com/aepsil0n/carboxyl"
+repository = "https://github.com/aepsil0n/carboxyl"
+readme = "README.md"
+keywords = ["frp", "reactive", "event", "concurrency"]
+license = "GPL-3.0+"
