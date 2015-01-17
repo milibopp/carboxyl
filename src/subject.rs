@@ -1,5 +1,7 @@
 //! Low-level push primitives
 
+#![allow(missing_docs)]
+
 use std::sync::{Arc, RwLock, Weak};
 use std::collections::RingBuf;
 use primitives::Cell;
