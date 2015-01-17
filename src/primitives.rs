@@ -1,7 +1,7 @@
 use std::sync::{Arc, RwLock};
 use subject::{
     Subject, Source, Mapper, Receiver, WrapArc, Snapper, Merger, Filter,
-    WeakSnapperWrapper, SamplingSubject, Holder, BehaviourSwitcher, Lift2,
+    WeakSnapperWrapper, SamplingSubject, Holder, CellSwitcher, Lift2,
     WeakLift2Wrapper
 };
 
@@ -25,101 +25,101 @@ impl<A: Send + Sync + Clone> Sink<A> {
         self.source.write().unwrap().send(a)
     }
 
-    pub fn event(&self) -> Event<A> {
-        Event { source: self.source.wrap_as_subject() }
+    pub fn event(&self) -> Stream<A> {
+        Stream { source: self.source.wrap_as_subject() }
     }
 }
 
 
-pub struct Event<A> {
+pub struct Stream<A> {
     source: Arc<RwLock<Box<Subject<A> + 'static>>>,
 }
 
-impl<A> Clone for Event<A> {
-    fn clone(&self) -> Event<A> {
-        Event { source: self.source.clone() }
+impl<A> Clone for Stream<A> {
+    fn clone(&self) -> Stream<A> {
+        Stream { source: self.source.clone() }
     }    
 }
 
-impl<A: Send + Sync + Clone> Event<A> {
-    pub fn map<B, F>(&self, f: F) -> Event<B>
+impl<A: Send + Sync + Clone> Stream<A> {
+    pub fn map<B, F>(&self, f: F) -> Stream<B>
         where B: Send + Sync + Clone,
               F: Fn(A) -> B + Send + Sync,
     {
         let source = Arc::new(RwLock::new(Mapper::new(f, self.source.clone())));
         self.source.write().unwrap().listen(source.wrap_as_listener());
-        Event { source: source.wrap_into_subject() }
+        Stream { source: source.wrap_into_subject() }
     }
 
-    pub fn filter<F: Fn(&A) -> bool + Send + Sync>(&self, f: F) -> Event<A> {
+    pub fn filter<F: Fn(&A) -> bool + Send + Sync>(&self, f: F) -> Stream<A> {
         let source = Arc::new(RwLock::new(Filter::new(f, self.source.clone())));
         self.source.write().unwrap().listen(source.wrap_as_listener());
-        Event { source: source.wrap_into_subject() }
+        Stream { source: source.wrap_into_subject() }
     }
 
-    pub fn merge(&self, other: &Event<A>) -> Event<A> {
+    pub fn merge(&self, other: &Stream<A>) -> Stream<A> {
         let source = Arc::new(RwLock::new(Merger::new([
             self.source.clone(),
             other.source.clone(),
         ])));
         self.source.write().unwrap().listen(source.wrap_as_listener());
         other.source.write().unwrap().listen(source.wrap_as_listener());
-        Event { source: source.wrap_into_subject() }
+        Stream { source: source.wrap_into_subject() }
     }
 
-    pub fn hold(&self, initial: A) -> Behaviour<A> {
+    pub fn hold(&self, initial: A) -> Cell<A> {
         let source = Arc::new(RwLock::new(
             Holder::new(initial, self.source.clone())
         ));
         self.source.write().unwrap().listen(source.wrap_as_listener());
-        Behaviour { source: source.wrap_into_sampling_subject() }
+        Cell { source: source.wrap_into_sampling_subject() }
     }
 
-    pub fn iter(&self) -> Iter<A> { Iter::new(self) }
+    fn iter(&self) -> Iter<A> { Iter::new(self) }
 }
 
 
-pub struct Behaviour<A> {
+pub struct Cell<A> {
     source: Arc<RwLock<Box<SamplingSubject<A> + 'static>>>
 }
 
-impl<A> Clone for Behaviour<A> {
-    fn clone(&self) -> Behaviour<A> {
-        Behaviour { source: self.source.clone() }
+impl<A> Clone for Cell<A> {
+    fn clone(&self) -> Cell<A> {
+        Cell { source: self.source.clone() }
     }
 }
 
-impl<A: Send + Sync + Clone> Behaviour<A> {
+impl<A: Send + Sync + Clone> Cell<A> {
     pub fn sample(&self) -> A {
         self.source.write().unwrap().sample()
     }
 
-    pub fn snapshot<B: Send + Sync + Clone>(&self, event: &Event<B>) -> Event<(A, B)> {
+    pub fn snapshot<B: Send + Sync + Clone>(&self, event: &Stream<B>) -> Stream<(A, B)> {
         let source = Arc::new(RwLock::new(Snapper::new(
             self.sample(), (self.source.clone(), event.source.clone())
         )));
         self.source.write().unwrap()
             .listen(WeakSnapperWrapper::boxed(&source));
         event.source.write().unwrap().listen(source.wrap_as_listener());
-        Event { source: source.wrap_into_subject() }
+        Stream { source: source.wrap_into_subject() }
     }
 }
 
-impl<A: Send + Sync + Clone> Behaviour<Behaviour<A>> {
-    pub fn switch(&self) -> Behaviour<A> {
+impl<A: Send + Sync + Clone> Cell<Cell<A>> {
+    pub fn switch(&self) -> Cell<A> {
         let source = Arc::new(RwLock::new(
-            BehaviourSwitcher::new(
+            CellSwitcher::new(
                 self.sample().sample(),
                 self.source.clone(),
             )
         ));
         self.source.write().unwrap().listen(source.wrap_as_listener());
-        Behaviour { source: source.wrap_into_sampling_subject() }
+        Cell { source: source.wrap_into_sampling_subject() }
     }
 }
 
 
-pub fn lift2<A, B, C, F>(f: F, ba: &Behaviour<A>, bb: &Behaviour<B>) -> Behaviour<C>
+pub fn lift2<A, B, C, F>(f: F, ba: &Cell<A>, bb: &Cell<B>) -> Cell<C>
     where A: Send + Sync + Clone,
           B: Send + Sync + Clone,
           C: Send + Sync + Clone,
@@ -130,11 +130,11 @@ pub fn lift2<A, B, C, F>(f: F, ba: &Behaviour<A>, bb: &Behaviour<B>) -> Behaviou
     )));
     ba.source.write().unwrap().listen(source.wrap_as_listener());
     bb.source.write().unwrap().listen(WeakLift2Wrapper::boxed(&source));
-    Behaviour { source: source.wrap_into_sampling_subject() }
+    Cell { source: source.wrap_into_sampling_subject() }
 }
 
 
-pub struct Iter<A> {
+struct Iter<A> {
     recv: Arc<RwLock<Receiver<A>>>,
 }
 
@@ -145,7 +145,7 @@ impl<A> Clone for Iter<A> {
 }
 
 impl<A: Send + Sync + Clone> Iter<A> {
-    fn new(event: &Event<A>) -> Iter<A> {
+    fn new(event: &Stream<A>) -> Iter<A> {
         let iter = Iter {
             recv: Arc::new(RwLock::new(Receiver::new(
                 event.source.clone()
@@ -166,7 +166,7 @@ impl<A: Send + Sync> Iterator for Iter<A> {
 
 #[cfg(test)]
 mod test {
-    //use behaviour::Behaviour;
+    //use behaviour::Cell;
     use super::*;
 
     #[test]
