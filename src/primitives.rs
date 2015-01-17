@@ -218,7 +218,7 @@ impl<A: Send + Sync> Iterator for Iter<A> {
 
 #[cfg(test)]
 mod test {
-    //use behaviour::Cell;
+    use test::Bencher;
     use super::*;
 
     #[test]
@@ -344,25 +344,25 @@ mod test {
         let stream2 = Sink::<Option<i32>>::new();
         let button1 = Sink::<()>::new();
         let button2 = Sink::<()>::new();
-        let tv = {
+        let output = {
             let stream1 = stream1.stream().hold(Some(-1));
             let stream2 = stream2.stream().hold(Some(-2));
             button1.stream()
-                .map(move |_| { println!("switch to 1"); stream1.clone() })
+                .map(move |_| stream1.clone())
                 .merge(&button2.stream()
                     .map(move |_| stream2.clone())
                 )
                 .hold(Sink::new().stream().hold(Some(-3)))
                 .switch()
         };
-        assert_eq!(tv.sample(), Some(-3));
+        assert_eq!(output.sample(), Some(-3));
         button1.send(());
-        assert_eq!(tv.sample(), Some(-1));
+        assert_eq!(output.sample(), Some(-1));
         button2.send(());
-        assert_eq!(tv.sample(), Some(-2));
+        assert_eq!(output.sample(), Some(-2));
         stream1.send(Some(6));
         button1.send(());
-        assert_eq!(tv.sample(), Some(6));
+        assert_eq!(output.sample(), Some(6));
     }
 
     #[test]

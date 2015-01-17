@@ -35,15 +35,13 @@ impl<A, L> Listener<A> for WeakListenerWrapper<L>
     where L: Listener<A> + Send + Sync, A: Send + Sync
 {
     fn accept(&mut self, a: A) -> ListenerResult {
-        let x = match self.weak.upgrade() {
+        match self.weak.upgrade() {
             Some(listener) => match listener.write() {
                 Ok(mut listener) => listener.accept(a),
                 Err(_) => Err(ListenerError::Poisoned),
             },
             None => Err(ListenerError::Disappeared),
-        };
-        println!("{:?}", x);
-        x
+        }
     }
 }
 

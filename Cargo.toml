@@ -1,5 +1,4 @@
 [package]
-
 name = "rustfrp"
 version = "0.0.1"
 authors = ["Emilia Bopp <Emilia.bopp@aepsil0n.de>"]
