@@ -320,4 +320,11 @@ mod test {
         sink.clone().send(3);
         assert_eq!(b.sample(), 3);
     }
+
+    #[test]
+    fn move_closure() {
+        let sink = Sink::<i32>::new();
+        let x = 3;
+        sink.event().map(move |y| y + x);
+    }
 }
