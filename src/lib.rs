@@ -36,7 +36,7 @@
 //! merged. A *cell* is an abstraction of a value that may change over time. One
 //! can e.g.  hold the last event from a stream in a cell.
 //!
-//! ```rust
+//! ```
 //! use carboxyl::Sink;
 //!
 //! let sink = Sink::<i32>::new();
@@ -51,10 +51,22 @@
 //! assert_eq!(cell.sample(), 5);
 //! ```
 //!
+//! One can also directly iterate over the stream instead of holding it in a
+//! cell:
+//!
+//! ```
+//! # use carboxyl::Sink;
+//! # let sink = Sink::<i32>::new();
+//! # let stream = sink.stream();
+//! let mut iter = stream.iter();
+//! sink.send(4);
+//! assert_eq!(iter.next(), Some(4));
+//! ```
+//!
 //! Streams and cells can be combined using various primitives. We can map a
 //! stream to another stream using a function:
 //!
-//! ```rust
+//! ```
 //! # use carboxyl::Sink;
 //! # let sink = Sink::<i32>::new();
 //! # let stream = sink.stream();
@@ -66,7 +78,7 @@
 //! Or we can filter a stream to create a new one that only contains events that
 //! satisfy a certain predicate:
 //!
-//! ```rust
+//! ```
 //! # use carboxyl::Sink;
 //! # let sink = Sink::<i32>::new();
 //! # let stream = sink.stream();

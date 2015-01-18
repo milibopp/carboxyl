@@ -1,12 +1,12 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, mpsc};
 use subject::{
-    Subject, Source, Mapper, Receiver, WrapArc, Snapper, Merger, Filter,
-    WeakSnapperWrapper, SamplingSubject, Holder, CellSwitcher, Lift2,
-    WeakLift2Wrapper,
+    Subject, Source, Mapper, WrapArc, Snapper, Merger, Filter, Holder, Lift2,
+    WeakSnapperWrapper, SamplingSubject, CellSwitcher, WeakLift2Wrapper,
+    ChannelBuffer,
 };
 
 
-/// An event sink
+/// An event sink.
 ///
 /// This primitive is the canonical way of generating streams of events. One can
 /// send input values into a sink and generate a stream that fires all these
@@ -17,15 +17,14 @@ use subject::{
 /// // A new sink
 /// let sink = Sink::new();
 ///
-/// // Make a cell by holding the last event in its stream
-/// let cell = sink.stream().hold(3);
-/// assert_eq!(cell.sample(), 3);
+/// // Make an iterator over a stream.
+/// let mut iter = sink.stream().iter();
 ///
 /// // Send a value into the sink
 /// sink.send(5);
 ///
-/// // The cell gets updated accordingly
-/// assert_eq!(cell.sample(), 5);
+/// // The stream
+/// assert_eq!(iter.next(), Some(5));
 /// ```
 pub struct Sink<A> {
     source: Arc<RwLock<Source<A>>>,
@@ -38,12 +37,15 @@ impl<A> Clone for Sink<A> {
 }
 
 impl<A: Send + Sync + Clone> Sink<A> {
-    /// Create a new sink
+    /// Create a new sink.
     pub fn new() -> Sink<A> {
         Sink { source: Arc::new(RwLock::new(Source::new())) }
     }
 
-    /// Send a value into the sink, firing an event in all dependent streams
+    /// Send a value into the sink.
+    ///
+    /// When a value is sent into the sink, an event is fired in all dependent
+    /// streams.
     pub fn send(&self, a: A) {
         match self.source.write() {
             Ok(mut src) => src.send(a),
@@ -51,14 +53,14 @@ impl<A: Send + Sync + Clone> Sink<A> {
         }
     }
 
-    /// Generate a stream that fires all events sent into the sink
+    /// Generate a stream that fires all events sent into the sink.
     pub fn stream(&self) -> Stream<A> {
         Stream { source: self.source.wrap_as_subject() }
     }
 }
 
 
-/// A stream of discrete events of type `A`
+/// A stream of discrete events.
 ///
 /// This occasionally fires an event of type `A` down its dependency graph.
 pub struct Stream<A> {
@@ -72,7 +74,7 @@ impl<A> Clone for Stream<A> {
 }
 
 impl<A: Send + Sync + Clone> Stream<A> {
-    /// Map the stream to another stream using a function
+    /// Map the stream to another stream using a function.
     ///
     /// `map` applies a function to every event fired in this stream to create a
     /// new stream of type `B`.
@@ -80,9 +82,9 @@ impl<A: Send + Sync + Clone> Stream<A> {
     /// ```
     /// # use carboxyl::Sink;
     /// let sink = Sink::<i32>::new();
-    /// let mapped_cell = sink.stream().map(|x| x + 4).hold(0);
+    /// let mut iter = sink.stream().map(|x| x + 4).iter();
     /// sink.send(3);
-    /// assert_eq!(mapped_cell.sample(), 7);
+    /// assert_eq!(iter.next(), Some(7));
     /// ```
     pub fn map<B, F>(&self, f: F) -> Stream<B>
         where B: Send + Sync + Clone,
@@ -94,7 +96,7 @@ impl<A: Send + Sync + Clone> Stream<A> {
         Stream { source: source.wrap_into_subject() }
     }
 
-    /// Filter the stream using a predicate
+    /// Filter the stream using a predicate.
     ///
     /// `filter` creates a new stream that evaluates a predicate to generate a
     /// new stream of events. The resulting stream only fires those events from
@@ -103,11 +105,10 @@ impl<A: Send + Sync + Clone> Stream<A> {
     /// ```
     /// # use carboxyl::Sink;
     /// let sink = Sink::<i32>::new();
-    /// let filtered_cell = sink.stream().filter(|&x| (x >= 4) && (x <= 10)).hold(-1);
+    /// let mut iter = sink.stream().filter(|&x| (x >= 4) && (x <= 10)).iter();
     /// sink.send(2); // won't arrive
-    /// assert_eq!(filtered_cell.sample(), -1);
     /// sink.send(5); // will arrive
-    /// assert_eq!(filtered_cell.sample(), 5);
+    /// assert_eq!(iter.next(), Some(5));
     /// ```
     pub fn filter<F: Fn(&A) -> bool + Send + Sync>(&self, f: F) -> Stream<A> {
         let source = Arc::new(RwLock::new(Filter::new(f, self.source.clone())));
@@ -116,7 +117,7 @@ impl<A: Send + Sync + Clone> Stream<A> {
         Stream { source: source.wrap_into_subject() }
     }
 
-    /// Merge with another stream
+    /// Merge with another stream.
     ///
     /// `merge` takes two streams and creates a new stream that fires events
     /// from both input streams.
@@ -125,11 +126,11 @@ impl<A: Send + Sync + Clone> Stream<A> {
     /// # use carboxyl::Sink;
     /// let sink_1 = Sink::<i32>::new();
     /// let sink_2 = Sink::<i32>::new();
-    /// let merged_cell = sink_1.stream().merge(&sink_2.stream()).hold(0);
+    /// let mut iter = sink_1.stream().merge(&sink_2.stream()).iter();
     /// sink_1.send(2);
-    /// assert_eq!(merged_cell.sample(), 2);
+    /// assert_eq!(iter.next(), Some(2));
     /// sink_2.send(4);
-    /// assert_eq!(merged_cell.sample(), 4);
+    /// assert_eq!(iter.next(), Some(4));
     /// ```
     pub fn merge(&self, other: &Stream<A>) -> Stream<A> {
         let source = Arc::new(RwLock::new(Merger::new([
@@ -143,7 +144,7 @@ impl<A: Send + Sync + Clone> Stream<A> {
         Stream { source: source.wrap_into_subject() }
     }
 
-    /// Hold an event in a cell
+    /// Hold an event in a cell.
     ///
     /// The resulting cell `hold`s the value of the last event fired by the
     /// stream.
@@ -165,11 +166,12 @@ impl<A: Send + Sync + Clone> Stream<A> {
         Cell { source: source.wrap_into_sampling_subject() }
     }
 
-    fn iter(&self) -> Iter<A> { Iter::new(self) }
+    /// A blocking iterator over the stream.
+    pub fn iter(&self) -> StreamIter<A> { StreamIter::new(self) }
 }
 
 
-/// A `Cell` is an abstraction over a value that changes over time
+/// A container of a value that changes over time.
 pub struct Cell<A> {
     source: Arc<RwLock<Box<SamplingSubject<A> + 'static>>>
 }
@@ -181,14 +183,14 @@ impl<A> Clone for Cell<A> {
 }
 
 impl<A: Send + Sync + Clone> Cell<A> {
-    /// Sample the current value of the cell
+    /// Sample the current value of the cell.
     ///
     /// `sample` provides access to the underlying data of a cell.
     pub fn sample(&self) -> A {
         self.source.write().ok().expect("Cell::sample").sample()
     }
 
-    /// Combine the cell with a stream in a snapshot
+    /// Combine the cell with a stream in a snapshot.
     ///
     /// `snapshot` creates a new stream given a cell and a stream. Whenever the
     /// input stream fires an event, the output stream fires a pair of the
@@ -199,15 +201,14 @@ impl<A: Send + Sync + Clone> Cell<A> {
     /// let sink1: Sink<i32> = Sink::new();
     /// let sink2: Sink<f64> = Sink::new();
     /// let snapshot = sink1.stream().hold(1).snapshot(&sink2.stream());
-    /// let cell = snapshot.hold((0, 0.0));
+    /// let mut iter = snapshot.iter();
     ///
     /// // Updating its cell does not cause the snapshot to fire
     /// sink1.send(4);
-    /// assert_eq!(cell.sample(), (0, 0.0));
     ///
-    /// // However its stream does
+    /// // However sending an event down the stream does
     /// sink2.send(3.0);
-    /// assert_eq!(cell.sample(), (4, 3.0));
+    /// assert_eq!(iter.next(), Some((4, 3.0)));
     /// ```
     pub fn snapshot<B: Send + Sync + Clone>(&self, event: &Stream<B>) -> Stream<(A, B)> {
         let source = Arc::new(RwLock::new(Snapper::new(
@@ -222,7 +223,7 @@ impl<A: Send + Sync + Clone> Cell<A> {
 }
 
 impl<A: Send + Sync + Clone> Cell<Cell<A>> {
-    /// Switch between cells
+    /// Switch between cells.
     ///
     /// This transforms a `Cell<Cell<A>>` into a `Cell<A>`. The nested cell can
     /// be thought of as a representation of a switch between different input
@@ -314,7 +315,7 @@ impl<A: Send + Sync + Clone> Cell<Cell<A>> {
 }
 
 
-/// Lift a two-argument function
+/// Lift a two-argument function to a function on cells.
 ///
 /// A lift maps a function on values to a function on cells. This particular
 /// function works only with a two-argument function and effectively turns two
@@ -356,34 +357,27 @@ pub fn lift2<A, B, C, F>(f: F, ba: &Cell<A>, bb: &Cell<B>) -> Cell<C>
 }
 
 
-struct Iter<A> {
-    recv: Arc<RwLock<Receiver<A>>>,
+pub struct StreamIter<A> {
+    receiver: mpsc::Receiver<A>,
+    #[allow(dead_code)]
+    buffer: Arc<RwLock<ChannelBuffer<A>>>,
 }
 
-impl<A> Clone for Iter<A> {
-    fn clone(&self) -> Iter<A> {
-        Iter { recv: self.recv.clone() }
+impl<A: Send + Sync + Clone> StreamIter<A> {
+    fn new(event: &Stream<A>) -> StreamIter<A> {
+        let (tx, rx) = mpsc::channel();
+        let chanbuf = Arc::new(RwLock::new(ChannelBuffer::new(
+            tx, event.source.clone()
+        )));
+        event.source.write().ok().expect("StreamIter::new")
+            .listen(chanbuf.wrap_as_listener());
+        StreamIter { receiver: rx, buffer: chanbuf }
     }
 }
 
-impl<A: Send + Sync + Clone> Iter<A> {
-    fn new(event: &Stream<A>) -> Iter<A> {
-        let iter = Iter {
-            recv: Arc::new(RwLock::new(Receiver::new(
-                event.source.clone()
-            ))),
-        };
-        event.source.write().ok().expect("Iter::new")
-            .listen(iter.recv.wrap_as_listener());
-        iter
-    }
-}
-
-impl<A: Send + Sync> Iterator for Iter<A> {
+impl<A: Send + Sync> Iterator for StreamIter<A> {
     type Item = A;
-    fn next(&mut self) -> Option<A> {
-        self.recv.write().ok().expect("Iter::next").next()
-    }
+    fn next(&mut self) -> Option<A> { self.receiver.recv().ok() }
 }
 
 
@@ -488,11 +482,9 @@ mod test {
         let ev2 = Sink::new();
         let snap = beh1.snapshot(&ev2.stream());
         let mut iter = snap.iter();
-        assert_eq!(iter.next(), None);
         ev2.send(4);
         assert_eq!(iter.next(), Some((5, 4)));
         ev1.send(-2);
-        assert_eq!(iter.next(), None);
         ev2.send(6);
         assert_eq!(iter.next(), Some((-2, 6)));
     }
