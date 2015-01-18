@@ -2,8 +2,8 @@
 
 #![allow(missing_docs)]
 
-use std::sync::{Arc, RwLock, Weak};
-use std::collections::RingBuf;
+use std::sync::{Arc, RwLock, Weak, Mutex};
+use std::sync::mpsc::Sender;
 use primitives::Cell;
 
 
@@ -475,49 +475,44 @@ impl<A, B, C, F> Listener<B> for WeakLift2Wrapper<A, B, C, F>
 }
 
 
-pub struct Receiver<A> {
-    buffer: RingBuf<A>,
+pub struct ChannelBuffer<A> {
+    sender: Mutex<Sender<A>>,
     #[allow(dead_code)]
     keep_alive: KeepAlive<A>,
 }
 
-impl<A> Receiver<A> {
-    pub fn new(keep_alive: KeepAlive<A>) -> Receiver<A> {
-        Receiver { buffer: RingBuf::new(), keep_alive: keep_alive }
+impl<A: Send> ChannelBuffer<A> {
+    pub fn new(sender: Sender<A>, keep_alive: KeepAlive<A>) -> ChannelBuffer<A> {
+        ChannelBuffer { sender: Mutex::new(sender), keep_alive: keep_alive }
     }
 }
 
-impl<A> Iterator for Receiver<A> {
-    type Item = A;
-    fn next(&mut self) -> Option<A> {
-        self.buffer.pop_front()
-    }
-}
-
-impl<A: Send + Sync> Subject<()> for Receiver<A> {
-    fn listen(&mut self, _: Box<Listener<()> + 'static>) {}
-}
-
-impl<A: Send + Sync> Listener<A> for Receiver<A> {
+impl<A: Send + Sync> Listener<A> for ChannelBuffer<A> {
     fn accept(&mut self, a: A) -> ListenerResult {
-        self.buffer.push_back(a);
-        Ok(())
+        match self.sender.lock() {
+            Ok(sender) => match sender.send(a) {
+                Ok(_) => Ok(()),
+                Err(_) => Err(ListenerError::Disappeared),
+            },
+            Err(_) => Err(ListenerError::Poisoned),
+        }
     }
 }
 
 
 #[cfg(test)]
 mod test {
-    use std::sync::{Arc, RwLock};
+    use std::sync::{Arc, RwLock, mpsc};
     use super::*;
 
     #[test]
     fn src_recv() {
         let src = Arc::new(RwLock::new(Source::new()));
-        let recv = Arc::new(RwLock::new(Receiver::new(src.wrap_as_subject())));
+        let (tx, rx) = mpsc::channel();
+        let recv = Arc::new(RwLock::new(ChannelBuffer::new(tx, src.wrap_as_subject())));
         src.write().unwrap().listen(recv.wrap_as_listener());
         src.write().unwrap().send(3);
-        assert_eq!(recv.write().unwrap().next(), Some(3));
+        assert_eq!(rx.recv(), Ok(3));
     }
 
     #[test]
@@ -525,10 +520,11 @@ mod test {
         let src = Arc::new(RwLock::new(Source::new()));
         let map = Arc::new(RwLock::new(Mapper::new(|x: i32| x + 3, src.wrap_as_subject())));
         src.write().unwrap().listen(map.wrap_as_listener());
-        let recv = Arc::new(RwLock::new(Receiver::new(map.wrap_as_subject())));
+        let (tx, rx) = mpsc::channel();
+        let recv = Arc::new(RwLock::new(ChannelBuffer::new(tx, map.wrap_as_subject())));
         map.write().unwrap().listen(recv.wrap_as_listener());
         src.write().unwrap().send(3);
-        assert_eq!(recv.write().unwrap().next(), Some(6));
+        assert_eq!(rx.recv(), Ok(6));
     }
 
     #[test]
@@ -536,13 +532,15 @@ mod test {
         let src = Arc::new(RwLock::new(Source::new()));
         let map = Arc::new(RwLock::new(Mapper::new(|x: i32| x + 3, src.wrap_as_subject())));
         src.write().unwrap().listen(map.wrap_as_listener());
-        let r1 = Arc::new(RwLock::new(Receiver::new(map.wrap_as_subject())));
-        map.write().unwrap().listen(r1.wrap_as_listener());
-        let r2 = Arc::new(RwLock::new(Receiver::new(src.wrap_as_subject())));
-        src.write().unwrap().listen(r2.wrap_as_listener());
+        let (tx1, rx1) = mpsc::channel();
+        let recv1 = Arc::new(RwLock::new(ChannelBuffer::new(tx1, map.wrap_as_subject())));
+        map.write().unwrap().listen(recv1.wrap_as_listener());
+        let (tx2, rx2) = mpsc::channel();
+        let recv2 = Arc::new(RwLock::new(ChannelBuffer::new(tx2, src.wrap_as_subject())));
+        src.write().unwrap().listen(recv2.wrap_as_listener());
         src.write().unwrap().send(4);
-        assert_eq!(r1.write().unwrap().next(), Some(7));
-        assert_eq!(r2.write().unwrap().next(), Some(4));
+        assert_eq!(rx1.recv(), Ok(7));
+        assert_eq!(rx2.recv(), Ok(4));
     }
 
     #[test]
@@ -550,11 +548,12 @@ mod test {
         let src = Arc::new(RwLock::new(Source::new()));
         let filter = Arc::new(RwLock::new(Filter::new(|&:x: &i32| *x > 2, src.wrap_as_subject())));
         src.write().unwrap().listen(filter.wrap_as_listener());
-        let recv = Arc::new(RwLock::new(Receiver::new(filter.wrap_as_subject())));
+        let (tx, rx) = mpsc::channel();
+        let recv = Arc::new(RwLock::new(ChannelBuffer::new(tx, filter.wrap_as_subject())));
         filter.write().unwrap().listen(recv.wrap_as_listener());
         src.write().unwrap().send(1);
         src.write().unwrap().send(3);
-        assert_eq!(recv.write().unwrap().next(), Some(3));
+        assert_eq!(rx.recv(), Ok(3));
     }
 
     #[test]
@@ -576,13 +575,13 @@ mod test {
         let snapper = Arc::new(RwLock::new(Snapper::new(3, (holder.wrap_as_sampling_subject(), src2.wrap_as_subject()))));
         src1.write().unwrap().listen(WeakSnapperWrapper::boxed(&snapper));
         src2.write().unwrap().listen(snapper.wrap_as_listener());
-        let recv = Arc::new(RwLock::new(Receiver::new(snapper.wrap_as_subject())));
+        let (tx, rx) = mpsc::channel();
+        let recv = Arc::new(RwLock::new(ChannelBuffer::new(tx, snapper.wrap_as_subject())));
         snapper.write().unwrap().listen(recv.wrap_as_listener());
         src2.write().unwrap().send(6.0);
-        assert_eq!(recv.write().unwrap().next(), Some((3, 6.0)));
+        assert_eq!(rx.recv(), Ok((3, 6.0)));
         src1.write().unwrap().send(5);
-        assert_eq!(recv.write().unwrap().next(), None);
         src2.write().unwrap().send(-4.0);
-        assert_eq!(recv.write().unwrap().next(), Some((5, -4.0)));
+        assert_eq!(rx.recv(), Ok((5, -4.0)));
     }
 }
