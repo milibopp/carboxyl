@@ -9,8 +9,24 @@ use subject::{
 /// An event sink
 ///
 /// This primitive is the canonical way of generating streams of events. One can
-/// send values into a sink and generate a stream that fires all these values as
-/// events.
+/// send input values into a sink and generate a stream that fires all these
+/// inputs as events:
+///
+/// ```
+/// # use carboxyl::Sink;
+/// // A new sink
+/// let sink = Sink::new();
+///
+/// // Make a cell by holding the last event in its stream
+/// let cell = sink.stream().hold(3);
+/// assert_eq!(cell.sample(), 3);
+///
+/// // Send a value into the sink
+/// sink.send(5);
+///
+/// // The cell gets updated accordingly
+/// assert_eq!(cell.sample(), 5);
+/// ```
 pub struct Sink<A> {
     source: Arc<RwLock<Source<A>>>,
 }
@@ -60,6 +76,14 @@ impl<A: Send + Sync + Clone> Stream<A> {
     ///
     /// `map` applies a function to every event fired in this stream to create a
     /// new stream of type `B`.
+    ///
+    /// ```
+    /// # use carboxyl::Sink;
+    /// let sink = Sink::<i32>::new();
+    /// let mapped_cell = sink.stream().map(|x| x + 4).hold(0);
+    /// sink.send(3);
+    /// assert_eq!(mapped_cell.sample(), 7);
+    /// ```
     pub fn map<B, F>(&self, f: F) -> Stream<B>
         where B: Send + Sync + Clone,
               F: Fn(A) -> B + Send + Sync,
@@ -75,6 +99,16 @@ impl<A: Send + Sync + Clone> Stream<A> {
     /// `filter` creates a new stream that evaluates a predicate to generate a
     /// new stream of events. The resulting stream only fires those events from
     /// the original stream that satisfy the predicate.
+    ///
+    /// ```
+    /// # use carboxyl::Sink;
+    /// let sink = Sink::<i32>::new();
+    /// let filtered_cell = sink.stream().filter(|&x| (x >= 4) && (x <= 10)).hold(-1);
+    /// sink.send(2); // won't arrive
+    /// assert_eq!(filtered_cell.sample(), -1);
+    /// sink.send(5); // will arrive
+    /// assert_eq!(filtered_cell.sample(), 5);
+    /// ```
     pub fn filter<F: Fn(&A) -> bool + Send + Sync>(&self, f: F) -> Stream<A> {
         let source = Arc::new(RwLock::new(Filter::new(f, self.source.clone())));
         self.source.write().ok().expect("Stream::filter")
@@ -86,6 +120,17 @@ impl<A: Send + Sync + Clone> Stream<A> {
     ///
     /// `merge` takes two streams and creates a new stream that fires events
     /// from both input streams.
+    ///
+    /// ```
+    /// # use carboxyl::Sink;
+    /// let sink_1 = Sink::<i32>::new();
+    /// let sink_2 = Sink::<i32>::new();
+    /// let merged_cell = sink_1.stream().merge(&sink_2.stream()).hold(0);
+    /// sink_1.send(2);
+    /// assert_eq!(merged_cell.sample(), 2);
+    /// sink_2.send(4);
+    /// assert_eq!(merged_cell.sample(), 4);
+    /// ```
     pub fn merge(&self, other: &Stream<A>) -> Stream<A> {
         let source = Arc::new(RwLock::new(Merger::new([
             self.source.clone(),
@@ -102,6 +147,15 @@ impl<A: Send + Sync + Clone> Stream<A> {
     ///
     /// The resulting cell `hold`s the value of the last event fired by the
     /// stream.
+    ///
+    /// ```
+    /// # use carboxyl::Sink;
+    /// let sink = Sink::new();
+    /// let cell = sink.stream().hold(0);
+    /// assert_eq!(cell.sample(), 0);
+    /// sink.send(2);
+    /// assert_eq!(cell.sample(), 2);
+    /// ```
     pub fn hold(&self, initial: A) -> Cell<A> {
         let source = Arc::new(RwLock::new(
             Holder::new(initial, self.source.clone())
@@ -139,6 +193,22 @@ impl<A: Send + Sync + Clone> Cell<A> {
     /// `snapshot` creates a new stream given a cell and a stream. Whenever the
     /// input stream fires an event, the output stream fires a pair of the
     /// cell's current value and that event.
+    ///
+    /// ```
+    /// # use carboxyl::Sink;
+    /// let sink1: Sink<i32> = Sink::new();
+    /// let sink2: Sink<f64> = Sink::new();
+    /// let snapshot = sink1.stream().hold(1).snapshot(&sink2.stream());
+    /// let cell = snapshot.hold((0, 0.0));
+    ///
+    /// // Updating its cell does not cause the snapshot to fire
+    /// sink1.send(4);
+    /// assert_eq!(cell.sample(), (0, 0.0));
+    ///
+    /// // However its stream does
+    /// sink2.send(3.0);
+    /// assert_eq!(cell.sample(), (4, 3.0));
+    /// ```
     pub fn snapshot<B: Send + Sync + Clone>(&self, event: &Stream<B>) -> Stream<(A, B)> {
         let source = Arc::new(RwLock::new(Snapper::new(
             self.sample(), (self.source.clone(), event.source.clone())
@@ -159,6 +229,67 @@ impl<A: Send + Sync + Clone> Cell<Cell<A>> {
     /// cells, that allows one to change the structure of the dependency graph
     /// at run-time. `switch` provides a way to access the inner value of the
     /// currently active cell.
+    ///
+    /// The following example demonstrates how to use this to switch between two
+    /// input cells based on a `Button` event stream:
+    ///
+    /// ```
+    /// # use carboxyl::Sink;
+    /// // Button type
+    /// #[derive(Clone, Show)]
+    /// enum Button { A, B };
+    ///
+    /// // The input sinks
+    /// let sink_a = Sink::<i32>::new();
+    /// let sink_b = Sink::<i32>::new();
+    ///
+    /// // The button sink
+    /// let sink_button = Sink::<Button>::new();
+    ///
+    /// // Create the output
+    /// let output = {
+    ///
+    ///     // Hold input sinks in a cell with some initials
+    ///     let channel_a = sink_a.stream().hold(1);
+    ///     let channel_b = sink_b.stream().hold(2);
+    ///
+    ///     // A trivial default channel used before any button event
+    ///     let default_channel = Sink::new().stream().hold(0);
+    ///
+    ///     // Map button to the channel cells, hold with the default channel as
+    ///     // initial value and switch between the cells
+    ///     sink_button
+    ///         .stream()
+    ///         .map(move |b| match b {
+    ///             Button::A => channel_a.clone(),
+    ///             Button::B => channel_b.clone(),
+    ///         })
+    ///         .hold(default_channel)
+    ///         .switch()
+    /// };
+    ///
+    /// // In the beginning, output will come from the default channel
+    /// assert_eq!(output.sample(), 0);
+    ///
+    /// // Let's switch to channel A
+    /// sink_button.send(Button::A);
+    /// assert_eq!(output.sample(), 1);
+    ///
+    /// // And to channel B
+    /// sink_button.send(Button::B);
+    /// assert_eq!(output.sample(), 2);
+    ///
+    /// // The channels can change, too, of course
+    /// for k in 4..13 {
+    ///     sink_b.send(k);
+    ///     assert_eq!(output.sample(), k);
+    /// }
+    /// sink_button.send(Button::A);
+    /// for k in 21..77 {
+    ///     sink_a.send(k);
+    ///     assert_eq!(output.sample(), k);
+    /// }
+    /// ```
     pub fn switch(&self) -> Cell<A> {
         // Acquire a lock to prevent parallel changes during this function
         let mut self_source = match self.source.write() {
@@ -191,6 +322,23 @@ impl<A: Send + Sync + Clone> Cell<Cell<A>> {
 /// type `F: Fn(A, B) -> C` by simply applying it two the inner values of the
 /// cells. So essentially `f(ba.sample(), bb.sample())` is the same as
 /// `lift2(f, ba, bb).sample()`.
+///
+/// The following example multiplies two behaviours:
+///
+/// ```
+/// # use carboxyl::{Sink, lift2};
+/// let sink_a = Sink::<i32>::new();
+/// let sink_b = Sink::<i32>::new();
+/// let product = lift2(
+///     |a, b| a * b,
+///     &sink_a.stream().hold(0),
+///     &sink_b.stream().hold(0)
+/// );
+/// assert_eq!(product.sample(), 0);
+/// sink_a.send(3);
+/// sink_b.send(5);
+/// assert_eq!(product.sample(), 15);
+/// ```
 pub fn lift2<A, B, C, F>(f: F, ba: &Cell<A>, bb: &Cell<B>) -> Cell<C>
     where A: Send + Sync + Clone,
           B: Send + Sync + Clone,

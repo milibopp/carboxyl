@@ -1,5 +1,9 @@
 `carboxyl` is a library for functional reactive programming in Rust.
 
+- [Crate on crates.io](https://crates.io/crates/carboxyl)
+- [Documentation on Rust CI](http://www.rust-ci.org/aepsil0n/carboxyl/doc/carboxyl/)
+- [Travis CI: ![Build Status](https://travis-ci.org/aepsil0n/carboxyl.svg?branch=master)](https://travis-ci.org/aepsil0n/carboxyl)
+
 
 ## About
 
@@ -27,6 +31,45 @@ type in particular.
 In addition, the `Sink` type allows one to create a stream of events by dumping
 values into it. It is the only way to create an event from scratch, i.e. without
 using any of the other primitives.
+
+For details, please refer to the
+[documentation](http://www.rust-ci.org/aepsil0n/carboxyl/doc/carboxyl/).
+
+
+### Example
+
+Here is a simple example of how you can use the primitives provided by
+`carboxyl`:
+
+```rust
+use carboxyl::Sink;
+
+// A new sink with a stream
+let sink = Sink::new();
+let stream = sink.stream();
+
+// Make a cell by holding the last event in a stream
+let cell = stream.hold(3);
+assert_eq!(cell.sample(), 3);
+
+// Send a value into the sink
+sink.send(5);
+
+// The cell gets updated accordingly
+assert_eq!(cell.sample(), 5);
+
+// Now map it to something else
+let squares = stream.map(|x| x * x).hold(0);
+sink.send(4);
+assert_eq!(squares.sample(), 16);
+
+// Or filter it
+let negatives = stream.filter(|&x| x < 0).hold(0);
+sink.send(4); // This won't arrive
+assert_eq!(negatives.sample(), 0);
+sink.send(-3); // but this will!
+assert_eq!(negatives.sample(), -3);
+```
 
 
 ### Limitations
