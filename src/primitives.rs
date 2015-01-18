@@ -1,4 +1,5 @@
 use std::sync::{Arc, RwLock, mpsc};
+use std::thread::Thread;
 use subject::{
     Subject, Source, Mapper, WrapArc, Snapper, Merger, Filter, Holder, Lift2,
     WeakSnapperWrapper, SamplingSubject, CellSwitcher, WeakLift2Wrapper,
@@ -8,9 +9,9 @@ use subject::{
 
 /// An event sink.
 ///
-/// This primitive is the canonical way of generating streams of events. One can
-/// send input values into a sink and generate a stream that fires all these
-/// inputs as events:
+/// This primitive is a way of generating streams of events. One can send
+/// input values into a sink and generate a stream that fires all these inputs
+/// as events:
 ///
 /// ```
 /// # use carboxyl::Sink;
@@ -26,6 +27,37 @@ use subject::{
 /// // The stream
 /// assert_eq!(iter.next(), Some(5));
 /// ```
+///
+/// You can also feed a sink with an iterator:
+///
+/// ```
+/// # use carboxyl::Sink;
+/// # let sink = Sink::new();
+/// # let mut iter = sink.stream().iter();
+/// sink.feed(20..40);
+/// assert_eq!(iter.take(4).collect::<Vec<_>>(), vec![20, 21, 22, 23]);
+/// ```
+///
+/// # Asynchronous calls
+///
+/// It is possible to send events into the sink asynchronously using the methods
+/// `send_async` and `feed_async`. Note though, that this will void some
+/// guarantees on the order of events. In the following example, it is unclear,
+/// which event is the first in the stream:
+///
+/// ```
+/// # use carboxyl::Sink;
+/// let sink = Sink::new();
+/// let mut iter = sink.stream().iter();
+/// sink.send_async(13);
+/// sink.send_async(22);
+/// let first = iter.next().unwrap();
+/// assert!(first == 13 || first == 22);
+/// ```
+///
+/// `feed_async` provides a workaround, as it preserves the order of events from
+/// the iterator. However, any event sent into the sink after a call to it, may
+/// come at any point between the iterator events.
 pub struct Sink<A> {
     source: Arc<RwLock<Source<A>>>,
 }
@@ -47,10 +79,37 @@ impl<A: Send + Sync + Clone> Sink<A> {
     /// When a value is sent into the sink, an event is fired in all dependent
     /// streams.
     pub fn send(&self, a: A) {
-        match self.source.write() {
-            Ok(mut src) => src.send(a),
-            Err(_) => panic!("send failed"),
+        self.source.write()
+            .ok().expect("Sink::send")
+            .send(a);
+    }
+
+    /// Asynchronous send.
+    ///
+    /// Same as `send`, but it spawns a new thread to process the updates to
+    /// dependent streams and cells.
+    pub fn send_async(&self, a: A) {
+        let clone = self.clone();
+        Thread::spawn(move || clone.send(a));
+    }
+
+    /// Feed values from an iterator into the sink.
+    ///
+    /// This method feeds events into the sink from an iterator.
+    pub fn feed<I: Iterator<Item=A>>(&self, mut iterator: I) {
+        for event in iterator {
+            self.send(event);
         }
+    }
+
+    /// Asynchronous feed.
+    ///
+    /// This is the same as `feed`, but it does not block, since it spawns the
+    /// feeding as a new task. This is useful, if the provided iterator is large
+    /// or even infinite (e.g. an I/O event loop).
+    pub fn feed_async<I: Iterator<Item=A> + Send>(&self, iterator: I) {
+        let clone = self.clone();
+        Thread::spawn(move || clone.feed(iterator));
     }
 
     /// Generate a stream that fires all events sent into the sink.
@@ -543,6 +602,34 @@ mod test {
         let sink = Sink::<i32>::new();
         let x = 3;
         sink.stream().map(move |y| y + x);
+    }
+
+    #[test]
+    fn sink_send_async() {
+        let sink = Sink::new();
+        let mut iter = sink.stream().iter();
+        sink.send_async(1);
+        assert_eq!(iter.next(), Some(1));
+    }
+
+    #[test]
+    fn sink_feed() {
+        let sink = Sink::new();
+        let iter = sink.stream().iter();
+        sink.feed(0..10);
+        for (n, m) in iter.take(10).enumerate() {
+            assert_eq!(n, m);
+        }
+    }
+
+    #[test]
+    fn sink_feed_async() {
+        let sink = Sink::new();
+        let iter = sink.stream().iter();
+        sink.feed_async(0..10);
+        for (n, m) in iter.take(10).enumerate() {
+            assert_eq!(n, m);
+        }
     }
 
     #[bench]
