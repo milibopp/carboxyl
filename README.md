@@ -30,6 +30,15 @@ sink.send(5);
 assert_eq!(cell.sample(), 5);
 ```
 
+One can also directly iterate over the stream instead of holding it in a
+cell:
+
+```rust
+let mut iter = stream.iter();
+sink.send(4);
+assert_eq!(iter.next(), Some(4));
+```
+
 Streams and cells can be combined using various primitives. We can map a stream
 to another stream using a function:
 
