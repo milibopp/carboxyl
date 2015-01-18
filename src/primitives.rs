@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 use subject::{
     Subject, Source, Mapper, Receiver, WrapArc, Snapper, Merger, Filter,
     WeakSnapperWrapper, SamplingSubject, Holder, CellSwitcher, Lift2,
-    WeakLift2Wrapper
+    WeakLift2Wrapper,
 };
 
 
@@ -29,7 +29,10 @@ impl<A: Send + Sync + Clone> Sink<A> {
 
     /// Send a value into the sink, firing an event in all dependent streams
     pub fn send(&self, a: A) {
-        self.source.write().unwrap().send(a)
+        match self.source.write() {
+            Ok(mut src) => src.send(a),
+            Err(_) => panic!("send failed"),
+        }
     }
 
     /// Generate a stream that fires all events sent into the sink
@@ -62,7 +65,8 @@ impl<A: Send + Sync + Clone> Stream<A> {
               F: Fn(A) -> B + Send + Sync,
     {
         let source = Arc::new(RwLock::new(Mapper::new(f, self.source.clone())));
-        self.source.write().unwrap().listen(source.wrap_as_listener());
+        self.source.write().ok().expect("Stream::map")
+            .listen(source.wrap_as_listener());
         Stream { source: source.wrap_into_subject() }
     }
 
@@ -73,7 +77,8 @@ impl<A: Send + Sync + Clone> Stream<A> {
     /// the original stream that satisfy the predicate.
     pub fn filter<F: Fn(&A) -> bool + Send + Sync>(&self, f: F) -> Stream<A> {
         let source = Arc::new(RwLock::new(Filter::new(f, self.source.clone())));
-        self.source.write().unwrap().listen(source.wrap_as_listener());
+        self.source.write().ok().expect("Stream::filter")
+            .listen(source.wrap_as_listener());
         Stream { source: source.wrap_into_subject() }
     }
 
@@ -86,8 +91,10 @@ impl<A: Send + Sync + Clone> Stream<A> {
             self.source.clone(),
             other.source.clone(),
         ])));
-        self.source.write().unwrap().listen(source.wrap_as_listener());
-        other.source.write().unwrap().listen(source.wrap_as_listener());
+        self.source.write().ok().expect("Stream::merge (self)")
+            .listen(source.wrap_as_listener());
+        other.source.write().ok().expect("Stream::merge (other)")
+            .listen(source.wrap_as_listener());
         Stream { source: source.wrap_into_subject() }
     }
 
@@ -99,7 +106,8 @@ impl<A: Send + Sync + Clone> Stream<A> {
         let source = Arc::new(RwLock::new(
             Holder::new(initial, self.source.clone())
         ));
-        self.source.write().unwrap().listen(source.wrap_as_listener());
+        self.source.write().ok().expect("Stream::hold")
+            .listen(source.wrap_as_listener());
         Cell { source: source.wrap_into_sampling_subject() }
     }
 
@@ -123,7 +131,7 @@ impl<A: Send + Sync + Clone> Cell<A> {
     ///
     /// `sample` provides access to the underlying data of a cell.
     pub fn sample(&self) -> A {
-        self.source.write().unwrap().sample()
+        self.source.write().ok().expect("Cell::sample").sample()
     }
 
     /// Combine the cell with a stream in a snapshot
@@ -135,9 +143,10 @@ impl<A: Send + Sync + Clone> Cell<A> {
         let source = Arc::new(RwLock::new(Snapper::new(
             self.sample(), (self.source.clone(), event.source.clone())
         )));
-        self.source.write().unwrap()
+        self.source.write().ok().expect("Cell::snapshot (self)")
             .listen(WeakSnapperWrapper::boxed(&source));
-        event.source.write().unwrap().listen(source.wrap_as_listener());
+        event.source.write().ok().expect("Cell::snapshot (event)")
+            .listen(source.wrap_as_listener());
         Stream { source: source.wrap_into_subject() }
     }
 }
@@ -151,13 +160,24 @@ impl<A: Send + Sync + Clone> Cell<Cell<A>> {
     /// at run-time. `switch` provides a way to access the inner value of the
     /// currently active cell.
     pub fn switch(&self) -> Cell<A> {
+        // Acquire a lock to prevent parallel changes during this function
+        let mut self_source = match self.source.write() {
+            Ok(a) => a,
+            Err(_) => panic!("self_source"),
+        };
+
+        // Create the cell switcher
         let source = Arc::new(RwLock::new(
             CellSwitcher::new(
-                self.sample().sample(),
+                self_source.sample(),
                 self.source.clone(),
             )
         ));
-        self.source.write().unwrap().listen(source.wrap_as_listener());
+
+        // Wire up
+        self_source.listen(source.wrap_as_listener());
+
+        // Create cell
         Cell { source: source.wrap_into_sampling_subject() }
     }
 }
@@ -180,8 +200,10 @@ pub fn lift2<A, B, C, F>(f: F, ba: &Cell<A>, bb: &Cell<B>) -> Cell<C>
     let source = Arc::new(RwLock::new(Lift2::new(
         (ba.sample(), bb.sample()), f, (ba.source.clone(), bb.source.clone())
     )));
-    ba.source.write().unwrap().listen(source.wrap_as_listener());
-    bb.source.write().unwrap().listen(WeakLift2Wrapper::boxed(&source));
+    ba.source.write().ok().expect("lift2 (ba)")
+        .listen(source.wrap_as_listener());
+    bb.source.write().ok().expect("lift2 (bb)")
+        .listen(WeakLift2Wrapper::boxed(&source));
     Cell { source: source.wrap_into_sampling_subject() }
 }
 
@@ -203,7 +225,8 @@ impl<A: Send + Sync + Clone> Iter<A> {
                 event.source.clone()
             ))),
         };
-        event.source.write().unwrap().listen(iter.recv.wrap_as_listener());
+        event.source.write().ok().expect("Iter::new")
+            .listen(iter.recv.wrap_as_listener());
         iter
     }
 }
@@ -211,7 +234,7 @@ impl<A: Send + Sync + Clone> Iter<A> {
 impl<A: Send + Sync> Iterator for Iter<A> {
     type Item = A;
     fn next(&mut self) -> Option<A> {
-        self.recv.write().unwrap().next()
+        self.recv.write().ok().expect("Iter::next").next()
     }
 }
 
@@ -360,9 +383,11 @@ mod test {
         assert_eq!(output.sample(), Some(-1));
         button2.send(());
         assert_eq!(output.sample(), Some(-2));
-        stream1.send(Some(6));
         button1.send(());
+        stream1.send(Some(6));
         assert_eq!(output.sample(), Some(6));
+        stream1.send(Some(12));
+        assert_eq!(output.sample(), Some(12));
     }
 
     #[test]

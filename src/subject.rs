@@ -59,7 +59,7 @@ impl<A, S> Subject<A> for StrongSubjectWrapper<S>
     where S: Subject<A> + Send + Sync, A: Send + Sync
 {
     fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
-        self.arc.write().unwrap().listen(listener);
+        self.arc.write().ok().expect("StrongSubjectWrapper::listen").listen(listener);
     }
 }
 
@@ -67,7 +67,7 @@ impl<A, S> Sample<A> for StrongSubjectWrapper<S>
     where S: Sample<A> + Send + Sync, A: Send + Sync
 {
     fn sample(&self) -> A {
-        self.arc.write().unwrap().sample()
+        self.arc.write().ok().expect("StrongSubjectWrapper::sample").sample()
     }
 }
 
@@ -348,22 +348,22 @@ impl<A: Send + Sync, B: Send + Sync> Listener<A> for WeakSnapperWrapper<A, B> {
 
 
 pub struct CellSwitcher<A> {
-    current: A,
+    current: Cell<A>,
     source: Source<A>,
     #[allow(dead_code)]
     keep_alive: KeepAliveSample<Cell<A>>,
 }
 
 impl<A> CellSwitcher<A> {
-    pub fn new(initial: A, keep_alive: KeepAliveSample<Cell<A>>) -> CellSwitcher<A> {
+    pub fn new(initial: Cell<A>, keep_alive: KeepAliveSample<Cell<A>>) -> CellSwitcher<A> {
         CellSwitcher { current: initial, source: Source::new(), keep_alive: keep_alive }
     }
 }
 
 impl<A: Send + Sync + Clone> Listener<Cell<A>> for CellSwitcher<A> {
-    fn accept(&mut self, b: Cell<A>) -> ListenerResult {
-        self.current = b.sample();
-        self.source.accept(self.current.clone())
+    fn accept(&mut self, cell: Cell<A>) -> ListenerResult {
+        self.current = cell;
+        self.source.accept(self.current.sample())
     }
 }
 
@@ -373,9 +373,9 @@ impl<A: Send + Sync + Clone> Subject<A> for CellSwitcher<A> {
     }
 }
 
-impl<A: Clone> Sample<A> for CellSwitcher<A> {
+impl<A: Send + Sync + Clone> Sample<A> for CellSwitcher<A> {
     fn sample(&self) -> A {
-        self.current.clone()
+        self.current.sample()
     }
 }
 
