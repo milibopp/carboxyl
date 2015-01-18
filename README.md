@@ -1,78 +1,71 @@
-`carboxyl` is a library for functional reactive programming in Rust.
+*Carboxyl* is a library for functional reactive programming in Rust, a
+functional and composable approach to handle events in interactive
+applications.
 
-- [Crate on crates.io](https://crates.io/crates/carboxyl)
-- [Documentation on Rust CI](http://www.rust-ci.org/aepsil0n/carboxyl/doc/carboxyl/)
-- [Travis CI: ![Build Status](https://travis-ci.org/aepsil0n/carboxyl.svg?branch=master)](https://travis-ci.org/aepsil0n/carboxyl)
-
-
-## About
-
-`carboxyl` provides primitives for functional reactive programming.  It is
-heavily influenced by the [Sodium](https://github.com/SodiumFRP/sodium/)
-libraries.
-
-Functional reactive programming (FRP) is a paradigm that effectively fixes the
-issues present in the traditional observer pattern approach to event handling.
-It uses a set of compositional primitives to model the dependency graph of a
-reactive system. If you want to learn more about FRP, check out [the Sodium
-blog](http://blog.reactiveprogramming.org).
-
-This library provides two basic types: `Stream` and `Cell`. A stream is a
-discrete sequence of events, a cell is a container for values that change
-(discretely) over time.
+- [Crate](https://crates.io/crates/carboxyl)
+- [Documentation](http://www.rust-ci.org/aepsil0n/carboxyl/doc/carboxyl/)
+- Travis CI: [![Build Status](https://travis-ci.org/aepsil0n/carboxyl.svg?branch=master)](https://travis-ci.org/aepsil0n/carboxyl)
 
 
-### API
-
-The FRP primitive functions are mostly implemented as methods of the basic types
-to ease method chaining, except for `lift2` which does not really belong to any
-type in particular.
-
-In addition, the `Sink` type allows one to create a stream of events by dumping
-values into it. It is the only way to create an event from scratch, i.e. without
-using any of the other primitives.
-
-For details, please refer to the
-[documentation](http://www.rust-ci.org/aepsil0n/carboxyl/doc/carboxyl/).
-
-
-### Example
+## Usage example
 
 Here is a simple example of how you can use the primitives provided by
-`carboxyl`:
+*Carboxyl*. First of all, events can be sent into a *sink*. From a sink one can
+create a *stream* of events. Streams can also be filtered, mapped and merged. A
+*cell* is an abstraction of a value that may change over time. One can e.g.
+hold the last event from a stream in a cell.
 
 ```rust
 use carboxyl::Sink;
 
-// A new sink with a stream
 let sink = Sink::new();
 let stream = sink.stream();
-
-// Make a cell by holding the last event in a stream
 let cell = stream.hold(3);
+
+// The current value of the cell is initially 3
 assert_eq!(cell.sample(), 3);
 
-// Send a value into the sink
+// When we fire an event, the cell get updated accordingly
 sink.send(5);
-
-// The cell gets updated accordingly
 assert_eq!(cell.sample(), 5);
+```
 
-// Now map it to something else
+Streams and cells can be combined using various primitives. We can map a stream
+to another stream using a function:
+
+```rust
 let squares = stream.map(|x| x * x).hold(0);
 sink.send(4);
 assert_eq!(squares.sample(), 16);
+```
 
-// Or filter it
+Or we can filter a stream to create a new one that only contains events that
+satisfy a certain predicate:
+
+```rust
 let negatives = stream.filter(|&x| x < 0).hold(0);
-sink.send(4); // This won't arrive
+
+// This won't arrive at the cell.
+sink.send(4);
 assert_eq!(negatives.sample(), 0);
-sink.send(-3); // but this will!
+
+// But this will!
+sink.send(-3);
 assert_eq!(negatives.sample(), -3);
 ```
 
+There are a couple of other primitives to compose streams and cells:
 
-### Limitations
+- `merge` two streams of events of the same type.
+- Make a `snapshot` of a cell, whenever a stream fires an event.
+- `lift` an ordinary function to a function on cells.
+- `switch` between different cells using a cell containing a cell.
+
+See the [documentation](http://www.rust-ci.org/aepsil0n/carboxyl/doc/carboxyl/)
+for details.
+
+
+## Limitations
 
 This library is fairly experimental and currently has some limitations:
 

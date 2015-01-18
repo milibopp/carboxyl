@@ -1,5 +1,3 @@
-//! An experimental functional reactive programming library
-//!
 //! *Carboxyl* provides primitives for functional reactive programming in Rust.
 //! It is heavily influenced by the
 //! [Sodium](https://github.com/SodiumFRP/sodium/) libraries.
@@ -8,8 +6,8 @@
 //! the issues present in the traditional observer pattern approach to event
 //! handling. It uses a set of compositional primitives to model the dependency
 //! graph of a reactive system. These primitives essentially provide a type- and
-//! thread-safe, compositional abstraction around mutable state in your
-//! application to avoid the pitfalls normally associated with it.
+//! thread-safe, compositional abstraction around events and  mutable state in
+//! your application to avoid the pitfalls normally associated with it.
 //!
 //! If you want to learn more about FRP in general, check out [the Sodium
 //! blog](http://blog.reactiveprogramming.org).
@@ -30,39 +28,56 @@
 //! i.e. without using any of the other primitives.
 //!
 //!
-//! # Example
+//! # Usage example
 //!
-//! Here is some code that demonstrates what you can do with streams and cells:
+//! Here is a simple example of how you can use the primitives provided by
+//! *Carboxyl*. First of all, events can be sent into a *sink*. From a sink one
+//! can create a *stream* of events. Streams can also be filtered, mapped and
+//! merged. A *cell* is an abstraction of a value that may change over time. One
+//! can e.g.  hold the last event from a stream in a cell.
 //!
-//! ```
-//! # // NOTE: If you change this example, please update the README.md
-//! # // accordingly, so that they remain in sync!
+//! ```rust
 //! use carboxyl::Sink;
 //!
-//! // A new sink with a stream
-//! let sink = Sink::new();
+//! let sink = Sink::<i32>::new();
 //! let stream = sink.stream();
-//!
-//! // Make a cell by holding the last event in a stream
 //! let cell = stream.hold(3);
+//!
+//! // The current value of the cell is initially 3
 //! assert_eq!(cell.sample(), 3);
 //!
-//! // Send a value into the sink
+//! // When we fire an event, the cell get updated accordingly
 //! sink.send(5);
-//!
-//! // The cell gets updated accordingly
 //! assert_eq!(cell.sample(), 5);
+//! ```
 //!
-//! // Now map it to something else
+//! Streams and cells can be combined using various primitives. We can map a
+//! stream to another stream using a function:
+//!
+//! ```rust
+//! # use carboxyl::Sink;
+//! # let sink = Sink::<i32>::new();
+//! # let stream = sink.stream();
 //! let squares = stream.map(|x| x * x).hold(0);
 //! sink.send(4);
 //! assert_eq!(squares.sample(), 16);
+//! ```
 //!
-//! // Or filter it
+//! Or we can filter a stream to create a new one that only contains events that
+//! satisfy a certain predicate:
+//!
+//! ```rust
+//! # use carboxyl::Sink;
+//! # let sink = Sink::<i32>::new();
+//! # let stream = sink.stream();
 //! let negatives = stream.filter(|&x| x < 0).hold(0);
-//! sink.send(4); // This won't arrive
+//!
+//! // This won't arrive at the cell.
+//! sink.send(4);
 //! assert_eq!(negatives.sample(), 0);
-//! sink.send(-3); // but this will!
+//!
+//! // But this will!
+//! sink.send(-3);
 //! assert_eq!(negatives.sample(), -3);
 //! ```
 //!
