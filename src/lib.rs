@@ -1,14 +1,21 @@
 //! An experimental functional reactive programming library
 //!
-//! `carboxyl` provides primitives for functional reactive programming in Rust.
+//! *Carboxyl* provides primitives for functional reactive programming in Rust.
 //! It is heavily influenced by the
 //! [Sodium](https://github.com/SodiumFRP/sodium/) libraries.
 //!
 //! Functional reactive programming (FRP) is a paradigm that effectively fixes
 //! the issues present in the traditional observer pattern approach to event
 //! handling. It uses a set of compositional primitives to model the dependency
-//! graph of a reactive system. If you want to learn more about FRP, check out
-//! [the Sodium blog](http://blog.reactiveprogramming.org).
+//! graph of a reactive system. These primitives essentially provide a type- and
+//! thread-safe, compositional abstraction around mutable state in your
+//! application to avoid the pitfalls normally associated with it.
+//!
+//! If you want to learn more about FRP in general, check out [the Sodium
+//! blog](http://blog.reactiveprogramming.org).
+//!
+//!
+//! # Functional reactive primitives
 //!
 //! This library provides two basic types: `Stream` and `Cell`. A stream is a
 //! discrete sequence of events, a cell is a container for values that change
@@ -22,7 +29,10 @@
 //! dumping values into it. It is the only way to create an event from scratch,
 //! i.e. without using any of the other primitives.
 //!
-//! Here is a simple example of what you can do with streams and cells:
+//!
+//! # Example
+//!
+//! Here is some code that demonstrates what you can do with streams and cells:
 //!
 //! ```
 //! # // NOTE: If you change this example, please update the README.md
@@ -63,9 +73,23 @@
 //! easily pass them around in your code, make clones, give them to another
 //! thread, and they will still be updated correctly.
 //!
-//! As you can see, these functional reactive primitives essentially provide a
-//! type- and thread-safe, compositional abstraction around mutable state in
-//! your application to avoid the pitfalls associated with it.
+//! You may have noticed that certain primitives take a function as an argument.
+//! There is a limitation on what kind of functions can and should be used here.
+//! In general, as FRP provides an abstraction around mutable state, they should
+//! be pure functions (i.e. free of side effects).
+//!
+//! For the most part this is guaranteed by Rust's type system. A static
+//! function with a matching signature always works. A closure though is very
+//! restricted: it must not borrow its environment, as it is impossible to
+//! satisfy the lifetime requirements for that. So you can only move stuff into
+//! it from the environment. However, the moved contents of the closure may also
+//! not be altered, which is guaranteed by the `Fn(…) -> …)` trait bound.
+//!
+//! However, both closures and functions could still have side effects such as
+//! I/O, changing shared mutable state via `Arc` pointers, etc. While Rust's
+//! type system cannot prevent this, you should generally not pass such
+//! functions to the FRP primitives, as they break the benefits you get from
+//! using FRP. (Except temporary print statements for debugging.)
 
 #![feature(unboxed_closures)]
 #![allow(unstable)]
