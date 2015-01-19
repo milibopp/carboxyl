@@ -52,7 +52,7 @@ Or we can filter a stream to create a new one that only contains events that
 satisfy a certain predicate:
 
 ```rust
-let negatives = stream.filter(|&x| x < 0).hold(0);
+let negatives = stream.filter_with(|&x| x < 0).hold(0);
 
 // This won't arrive at the cell.
 sink.send(4);

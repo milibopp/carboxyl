@@ -209,34 +209,31 @@ impl<A, B, F> Listener<A> for Mapper<A, B, F>
 }
 
 
-pub struct Filter<A, F> {
-    func: F,
+pub struct Filter<A> {
     source: Source<A>,
     #[allow(dead_code)]
-    keep_alive: KeepAlive<A>,
+    keep_alive: KeepAlive<Option<A>>,
 }
 
-impl<A, F> Filter<A, F> {
-    pub fn new(f: F, keep_alive: KeepAlive<A>) -> Filter<A, F> {
-        Filter { source: Source::new(), func: f, keep_alive: keep_alive }
+impl<A> Filter<A> {
+    pub fn new(keep_alive: KeepAlive<Option<A>>) -> Filter<A> {
+        Filter { source: Source::new(), keep_alive: keep_alive }
     }
 }
 
-impl<A: Send + Sync, F: Send + Sync> Subject<A> for Filter<A, F> {
+impl<A: Send + Sync> Subject<A> for Filter<A> {
     fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
         self.source.listen(listener);
     }
 }
 
-impl<A, F> Listener<A> for Filter<A, F>
+impl<A> Listener<Option<A>> for Filter<A>
     where A: Send + Sync + Clone,
-          F: Fn(&A) -> bool + Send + Sync,
 {
-    fn accept(&mut self, a: A) -> ListenerResult {
-        if (self.func)(&a) {
-            self.source.accept(a)
-        } else {
-            Ok(())
+    fn accept(&mut self, a: Option<A>) -> ListenerResult {
+        match a {
+            Some(a) => self.source.accept(a),
+            None => Ok(()),
         }
     }
 }
@@ -546,13 +543,13 @@ mod test {
     #[test]
     fn filter() {
         let src = Arc::new(RwLock::new(Source::new()));
-        let filter = Arc::new(RwLock::new(Filter::new(|&:x: &i32| *x > 2, src.wrap_as_subject())));
+        let filter = Arc::new(RwLock::new(Filter::new(src.wrap_as_subject())));
         src.write().unwrap().listen(filter.wrap_as_listener());
         let (tx, rx) = mpsc::channel();
         let recv = Arc::new(RwLock::new(ChannelBuffer::new(tx, filter.wrap_as_subject())));
         filter.write().unwrap().listen(recv.wrap_as_listener());
-        src.write().unwrap().send(1);
-        src.write().unwrap().send(3);
+        src.write().unwrap().send(None);
+        src.write().unwrap().send(Some(3));
         assert_eq!(rx.recv(), Ok(3));
     }
 
