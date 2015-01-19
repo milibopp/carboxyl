@@ -155,25 +155,25 @@ impl<A: Send + Sync + Clone> Stream<A> {
         Stream { source: source.wrap_into_subject() }
     }
 
-    /// Filter the stream using a predicate.
+    /// Filter a stream according to a predicate.
     ///
-    /// `filter` creates a new stream that evaluates a predicate to generate a
-    /// new stream of events. The resulting stream only fires those events from
-    /// the original stream that satisfy the predicate.
+    /// `filter` creates a new stream that only fires the unwrapped `Some(…)`
+    /// events from the original stream omitting any `None` events.
     ///
     /// ```
     /// # use carboxyl::Sink;
     /// let sink = Sink::<i32>::new();
-    /// let mut iter = sink.stream().filter(|&x| (x >= 4) && (x <= 10)).iter();
+    /// let mut iter = sink.stream()
+    ///     .filter_with(|&x| (x >= 4) && (x <= 10))
+    ///     .iter();
     /// sink.send(2); // won't arrive
     /// sink.send(5); // will arrive
     /// assert_eq!(iter.next(), Some(5));
     /// ```
-    pub fn filter<F: Fn(&A) -> bool + Send + Sync>(&self, f: F) -> Stream<A> {
-        let source = Arc::new(RwLock::new(Filter::new(f, self.source.clone())));
-        self.source.write().ok().expect("Stream::filter")
-            .listen(source.wrap_as_listener());
-        Stream { source: source.wrap_into_subject() }
+    pub fn filter_with<F>(&self, f: F) -> Stream<A>
+        where F: Fn(&A) -> bool + Send + Sync,
+    {
+        self.map(move |a| if f(&a) { Some(a) } else { None }).filter()
     }
 
     /// Merge with another stream.
@@ -227,6 +227,30 @@ impl<A: Send + Sync + Clone> Stream<A> {
 
     /// A blocking iterator over the stream.
     pub fn iter(&self) -> StreamIter<A> { StreamIter::new(self) }
+}
+
+impl<A: Send + Sync + Clone> Stream<Option<A>> {
+    /// Filter a stream of options.
+    ///
+    /// `filter` creates a new stream that only fires the unwrapped `Some(…)`
+    /// events from the original stream omitting any `None` events.
+    ///
+    /// ```
+    /// # use carboxyl::Sink;
+    /// let sink = Sink::<i32>::new();
+    /// let mut iter = sink.stream()
+    ///     .map(|x| if (x >= 4) && (x <= 10) { Some(x) } else { None })
+    ///     .filter().iter();
+    /// sink.send(2); // won't arrive
+    /// sink.send(5); // will arrive
+    /// assert_eq!(iter.next(), Some(5));
+    /// ```
+    pub fn filter(&self) -> Stream<A> {
+        let source = Arc::new(RwLock::new(Filter::new(self.source.clone())));
+        self.source.write().ok().expect("Stream::filter")
+            .listen(source.wrap_as_listener());
+        Stream { source: source.wrap_into_subject() }
+    }
 }
 
 
@@ -467,10 +491,10 @@ mod test {
     #[test]
     fn filter() {
         let sink = Sink::new();
-        let small = sink.stream().filter(|&x: &i32| x < 11);
+        let small = sink.stream().filter();
         let mut iter = small.iter();
-        sink.send(12);
-        sink.send(9);
+        sink.send(None);
+        sink.send(Some(9));
         assert_eq!(iter.next(), Some(9));
     }
 
@@ -496,28 +520,23 @@ mod test {
 
     #[test]
     fn chain_1() {
-        let sink = Sink::new();
-        let chain = sink.stream().filter(|&x: &i32| x < 20).map(|x| x / 2);
+        let sink = Sink::<i32>::new();
+        let chain = sink.stream().map(|x| x / 2).filter_with(|&x| x < 3);
         let mut iter = chain.iter();
+        sink.send(7);
         sink.send(4);
         assert_eq!(iter.next(), Some(2));
     }
 
     #[test]
     fn chain_2() {
-        let sink: Sink<i32> = Sink::new();
-        let chain = sink.stream().map(|x| x / 2).filter(|&x| x < 3);
-        let mut iter = chain.iter();
-        sink.send(4);
-        assert_eq!(iter.next(), Some(2));
-    }
-
-    #[test]
-    fn chain_3() {
         let sink1: Sink<i32> = Sink::new();
         let sink2: Sink<i32> = Sink::new();
         let mut iter = sink1.stream().map(|x| x + 4)
-            .merge(&sink2.stream().filter(|&x| x < 4).map(|x| x * 5))
+            .merge(
+                &sink2.stream()
+                .map(|x| if x < 4 { Some(x) } else { None })
+                .filter().map(|x| x * 5))
             .iter();
         sink1.send(12);
         sink2.send(3);
@@ -637,7 +656,7 @@ mod test {
         let sink: Sink<i32> = Sink::new();
         let _ = sink.stream()
             .map(|x| x + 4)
-            .filter(|&x| x < 4)
+            .filter_with(|&x| x < 4)
             .merge(&sink.stream().map(|x| x * 5))
             .hold(15);
         b.iter(|| sink.send(-5));

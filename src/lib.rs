@@ -82,7 +82,7 @@
 //! # use carboxyl::Sink;
 //! # let sink = Sink::<i32>::new();
 //! # let stream = sink.stream();
-//! let negatives = stream.filter(|&x| x < 0).hold(0);
+//! let negatives = stream.filter_with(|&x| x < 0).hold(0);
 //!
 //! // This won't arrive at the cell.
 //! sink.send(4);
