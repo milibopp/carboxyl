@@ -127,5 +127,5 @@ extern crate test;
 
 pub use primitives::{Stream, Cell, Sink, lift2};
 
-mod subject;
 mod primitives;
+mod transaction;
