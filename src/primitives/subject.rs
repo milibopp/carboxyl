@@ -360,7 +360,7 @@ impl<A> CellSwitcher<A> {
 impl<A: Send + Sync + Clone> Listener<Cell<A>> for CellSwitcher<A> {
     fn accept(&mut self, cell: Cell<A>) -> ListenerResult {
         self.current = cell;
-        self.source.accept(self.current.sample())
+        self.source.accept(self.current.sample_nocommit())
     }
 }
 
@@ -372,7 +372,7 @@ impl<A: Send + Sync + Clone> Subject<A> for CellSwitcher<A> {
 
 impl<A: Send + Sync + Clone> Sample<A> for CellSwitcher<A> {
     fn sample(&self) -> A {
-        self.current.sample()
+        self.current.sample_nocommit()
     }
 }
 

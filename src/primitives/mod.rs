@@ -1,10 +1,13 @@
 use std::sync::{Arc, RwLock, mpsc};
 use std::thread::Thread;
-use subject::{
+use primitives::subject::{
     Subject, Source, Mapper, WrapArc, Snapper, Merger, Filter, Holder, Lift2,
     WeakSnapperWrapper, SamplingSubject, CellSwitcher, WeakLift2Wrapper,
     ChannelBuffer,
 };
+use transaction::commit;
+
+mod subject;
 
 
 /// An event sink.
@@ -79,9 +82,11 @@ impl<A: Send + Sync + Clone> Sink<A> {
     /// When a value is sent into the sink, an event is fired in all dependent
     /// streams.
     pub fn send(&self, a: A) {
-        self.source.write()
-            .ok().expect("Sink::send")
-            .send(a);
+        commit((), move |_|
+            self.source.write()
+                .ok().expect("Sink::send")
+                .send(a)
+        )
     }
 
     /// Asynchronous send.
@@ -114,7 +119,7 @@ impl<A: Send + Sync + Clone> Sink<A> {
 
     /// Generate a stream that fires all events sent into the sink.
     pub fn stream(&self) -> Stream<A> {
-        Stream { source: self.source.wrap_as_subject() }
+        Stream { source: commit((), |_| self.source.wrap_as_subject()) }
     }
 }
 
@@ -150,9 +155,11 @@ impl<A: Send + Sync + Clone> Stream<A> {
               F: Fn(A) -> B + Send + Sync,
     {
         let source = Arc::new(RwLock::new(Mapper::new(f, self.source.clone())));
-        self.source.write().ok().expect("Stream::map")
-            .listen(source.wrap_as_listener());
-        Stream { source: source.wrap_into_subject() }
+        commit((), |_| {
+            self.source.write().ok().expect("Stream::map")
+                .listen(source.wrap_as_listener());
+            Stream { source: source.wrap_as_subject() }
+        })
     }
 
     /// Filter a stream according to a predicate.
@@ -196,11 +203,13 @@ impl<A: Send + Sync + Clone> Stream<A> {
             self.source.clone(),
             other.source.clone(),
         ])));
-        self.source.write().ok().expect("Stream::merge (self)")
-            .listen(source.wrap_as_listener());
-        other.source.write().ok().expect("Stream::merge (other)")
-            .listen(source.wrap_as_listener());
-        Stream { source: source.wrap_into_subject() }
+        commit((), |_| {
+            self.source.write().ok().expect("Stream::merge (self)")
+                .listen(source.wrap_as_listener());
+            other.source.write().ok().expect("Stream::merge (other)")
+                .listen(source.wrap_as_listener());
+            Stream { source: source.wrap_as_subject() }
+        })
     }
 
     /// Hold an event in a cell.
@@ -220,9 +229,11 @@ impl<A: Send + Sync + Clone> Stream<A> {
         let source = Arc::new(RwLock::new(
             Holder::new(initial, self.source.clone())
         ));
-        self.source.write().ok().expect("Stream::hold")
-            .listen(source.wrap_as_listener());
-        Cell { source: source.wrap_into_sampling_subject() }
+        commit((), |_| {
+            self.source.write().ok().expect("Stream::hold")
+                .listen(source.wrap_as_listener());
+            Cell { source: source.wrap_as_sampling_subject() }
+        })
     }
 
     /// A blocking iterator over the stream.
@@ -247,9 +258,11 @@ impl<A: Send + Sync + Clone> Stream<Option<A>> {
     /// ```
     pub fn filter(&self) -> Stream<A> {
         let source = Arc::new(RwLock::new(Filter::new(self.source.clone())));
-        self.source.write().ok().expect("Stream::filter")
-            .listen(source.wrap_as_listener());
-        Stream { source: source.wrap_into_subject() }
+        commit((), |_| {
+            self.source.write().ok().expect("Stream::filter")
+                .listen(source.wrap_as_listener());
+            Stream { source: source.wrap_as_subject() }
+        })
     }
 }
 
@@ -270,6 +283,11 @@ impl<A: Send + Sync + Clone> Cell<A> {
     ///
     /// `sample` provides access to the underlying data of a cell.
     pub fn sample(&self) -> A {
+        commit((), |_| self.sample_nocommit())
+    }
+
+    /// Sample without committing a transaction.
+    fn sample_nocommit(&self) -> A {
         self.source.write().ok().expect("Cell::sample").sample()
     }
 
@@ -294,14 +312,16 @@ impl<A: Send + Sync + Clone> Cell<A> {
     /// assert_eq!(iter.next(), Some((4, 3.0)));
     /// ```
     pub fn snapshot<B: Send + Sync + Clone>(&self, event: &Stream<B>) -> Stream<(A, B)> {
-        let source = Arc::new(RwLock::new(Snapper::new(
-            self.sample(), (self.source.clone(), event.source.clone())
-        )));
-        self.source.write().ok().expect("Cell::snapshot (self)")
-            .listen(WeakSnapperWrapper::boxed(&source));
-        event.source.write().ok().expect("Cell::snapshot (event)")
-            .listen(source.wrap_as_listener());
-        Stream { source: source.wrap_into_subject() }
+        commit((), |_| {
+            let source = Arc::new(RwLock::new(Snapper::new(
+                self.sample_nocommit(), (self.source.clone(), event.source.clone())
+            )));
+            self.source.write().ok().expect("Cell::snapshot (self)")
+                .listen(WeakSnapperWrapper::boxed(&source));
+            event.source.write().ok().expect("Cell::snapshot (event)")
+                .listen(source.wrap_as_listener());
+            Stream { source: source.wrap_into_subject() }
+        })
     }
 }
 
@@ -375,25 +395,22 @@ impl<A: Send + Sync + Clone> Cell<Cell<A>> {
     /// }
     /// ```
     pub fn switch(&self) -> Cell<A> {
-        // Acquire a lock to prevent parallel changes during this function
-        let mut self_source = match self.source.write() {
-            Ok(a) => a,
-            Err(_) => panic!("self_source"),
-        };
+        commit((), |_| {
+            // Create the cell switcher
+            let mut self_source = self.source.write().ok().expect("Cell::switch");
+            let source = Arc::new(RwLock::new(
+                CellSwitcher::new(
+                    self_source.sample(),
+                    self.source.clone(),
+                )
+            ));
 
-        // Create the cell switcher
-        let source = Arc::new(RwLock::new(
-            CellSwitcher::new(
-                self_source.sample(),
-                self.source.clone(),
-            )
-        ));
+            // Wire up
+            self_source.listen(source.wrap_as_listener());
 
-        // Wire up
-        self_source.listen(source.wrap_as_listener());
-
-        // Create cell
-        Cell { source: source.wrap_into_sampling_subject() }
+            // Create cell
+            Cell { source: source.wrap_into_sampling_subject() }
+        })
     }
 }
 
@@ -429,14 +446,16 @@ pub fn lift2<A, B, C, F>(f: F, ba: &Cell<A>, bb: &Cell<B>) -> Cell<C>
           C: Send + Sync + Clone,
           F: Fn(A, B) -> C + Send + Sync,
 {
-    let source = Arc::new(RwLock::new(Lift2::new(
-        (ba.sample(), bb.sample()), f, (ba.source.clone(), bb.source.clone())
-    )));
-    ba.source.write().ok().expect("lift2 (ba)")
-        .listen(source.wrap_as_listener());
-    bb.source.write().ok().expect("lift2 (bb)")
-        .listen(WeakLift2Wrapper::boxed(&source));
-    Cell { source: source.wrap_into_sampling_subject() }
+    commit((f, ba, bb), |(f, ba, bb)| {
+        let source = Arc::new(RwLock::new(Lift2::new(
+            (ba.sample_nocommit(), bb.sample_nocommit()), f, (ba.source.clone(), bb.source.clone())
+        )));
+        ba.source.write().ok().expect("lift2 (ba)")
+            .listen(source.wrap_as_listener());
+        bb.source.write().ok().expect("lift2 (bb)")
+            .listen(WeakLift2Wrapper::boxed(&source));
+        Cell { source: source.wrap_into_sampling_subject() }
+    })
 }
 
 
