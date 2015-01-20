@@ -4,7 +4,7 @@
 
 use std::sync::{Arc, RwLock, Weak, Mutex};
 use std::sync::mpsc::Sender;
-use primitives::Cell;
+use Cell;
 
 
 #[derive(Show)]
