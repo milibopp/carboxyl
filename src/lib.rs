@@ -587,6 +587,7 @@ pub fn lift2<A, B, C, F>(f: F, ba: &Cell<A>, bb: &Cell<B>) -> Cell<C>
 }
 
 
+/// A blocking iterator over events in a stream.
 pub struct StreamIter<A> {
     receiver: mpsc::Receiver<A>,
     #[allow(dead_code)]
