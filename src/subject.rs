@@ -5,6 +5,7 @@
 use std::sync::{Arc, RwLock, Weak, Mutex};
 use std::sync::mpsc::Sender;
 use Cell;
+use transaction::register_callback;
 
 
 #[derive(Show)]
@@ -272,6 +273,7 @@ impl<A: Send + Sync + Clone> Listener<A> for Holder<A> {
 
 pub struct Snapper<A, B> {
     current: A,
+    update: Option<A>,
     source: Source<(A, B)>,
     #[allow(dead_code)]
     keep_alive: (KeepAliveSample<A>, KeepAlive<B>),
@@ -279,7 +281,12 @@ pub struct Snapper<A, B> {
 
 impl<A, B> Snapper<A, B> {
     pub fn new(initial: A, keep_alive: (KeepAliveSample<A>, KeepAlive<B>)) -> Snapper<A, B> {
-        Snapper { current: initial, source: Source::new(), keep_alive: keep_alive }
+        Snapper {
+            current: initial,
+            update: None,
+            source: Source::new(),
+            keep_alive: keep_alive
+        }
     }
 }
 
@@ -292,6 +299,46 @@ impl<A: Send + Sync + Clone, B: Send + Sync + Clone> Listener<B> for Snapper<A, 
 impl<A: Send + Sync, B: Send + Sync> Subject<(A, B)> for Snapper<A, B> {
     fn listen(&mut self, listener: Box<Listener<(A, B)> + 'static>) {
         self.source.listen(listener);
+    }
+}
+
+
+pub struct WeakSnapperWrapper<A, B> {
+    weak: Weak<RwLock<Snapper<A, B>>>,
+}
+
+impl<A: Send + Sync, B: Send + Sync> WeakSnapperWrapper<A, B> {
+    pub fn boxed(strong: &Arc<RwLock<Snapper<A, B>>>) -> Box<Listener<A> + 'static> {
+        Box::new(WeakSnapperWrapper { weak: strong.downgrade() })
+    }
+}
+
+impl<A: Send + Sync, B: Send + Sync> Listener<A> for WeakSnapperWrapper<A, B> {
+    fn accept(&mut self, a: A) -> ListenerResult {
+        match self.weak.upgrade() {
+            Some(arc) => match arc.write() {
+                Ok(mut snapper) => {
+                    snapper.update = Some(a);
+                    let weak = self.weak.clone();
+                    register_callback(move || {
+                        match weak.upgrade() {
+                            Some(arc) => {
+                                let mut snapper = arc.write().ok()
+                                    .expect("snapshot too poisonous for callback");
+                                match snapper.update.take() {
+                                    Some(up) => snapper.current = up,
+                                    None => (),
+                                }
+                            }
+                            None => (),
+                        }
+                    });
+                    Ok(())
+                },
+                Err(_) => Err(ListenerError::Poisoned),
+            },
+            None => Err(ListenerError::Disappeared),
+        }
     }
 }
 
@@ -317,29 +364,6 @@ impl<A: Send + Sync + Clone> Listener<A> for Merger<A> {
 impl<A: Send + Sync> Subject<A> for Merger<A> {
     fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
         self.source.listen(listener);
-    }
-}
-
-
-pub struct WeakSnapperWrapper<A, B> {
-    weak: Weak<RwLock<Snapper<A, B>>>,
-}
-
-impl<A: Send + Sync, B: Send + Sync> WeakSnapperWrapper<A, B> {
-    pub fn boxed(strong: &Arc<RwLock<Snapper<A, B>>>) -> Box<Listener<A> + 'static> {
-        Box::new(WeakSnapperWrapper { weak: strong.downgrade() })
-    }
-}
-
-impl<A: Send + Sync, B: Send + Sync> Listener<A> for WeakSnapperWrapper<A, B> {
-    fn accept(&mut self, a: A) -> ListenerResult {
-        match self.weak.upgrade() {
-            Some(arc) => match arc.write() {
-                Ok(mut snapper) => { snapper.current = a; Ok(()) },
-                Err(_) => Err(ListenerError::Poisoned),
-            },
-            None => Err(ListenerError::Disappeared),
-        }
     }
 }
 
@@ -500,6 +524,7 @@ impl<A: Send + Sync> Listener<A> for ChannelBuffer<A> {
 #[cfg(test)]
 mod test {
     use std::sync::{Arc, RwLock, mpsc};
+    use transaction::commit;
     use super::*;
 
     #[test]
@@ -565,8 +590,8 @@ mod test {
 
     #[test]
     fn snapper() {
-        let src1 = Arc::new(RwLock::new(Source::new()));
-        let src2 = Arc::new(RwLock::new(Source::new()));
+        let src1 = Arc::new(RwLock::new(Source::<i32>::new()));
+        let src2 = Arc::new(RwLock::new(Source::<f64>::new()));
         let holder = Arc::new(RwLock::new(Holder::new(1, src1.wrap_as_subject())));
         src1.write().unwrap().listen(holder.wrap_as_listener());
         let snapper = Arc::new(RwLock::new(Snapper::new(3, (holder.wrap_as_sampling_subject(), src2.wrap_as_subject()))));
@@ -575,10 +600,10 @@ mod test {
         let (tx, rx) = mpsc::channel();
         let recv = Arc::new(RwLock::new(ChannelBuffer::new(tx, snapper.wrap_as_subject())));
         snapper.write().unwrap().listen(recv.wrap_as_listener());
-        src2.write().unwrap().send(6.0);
+        commit((), |_| src2.write().unwrap().send(6.0));
         assert_eq!(rx.recv(), Ok((3, 6.0)));
-        src1.write().unwrap().send(5);
-        src2.write().unwrap().send(-4.0);
+        commit((), |_| src1.write().unwrap().send(5));
+        commit((), |_| src2.write().unwrap().send(-4.0));
         assert_eq!(rx.recv(), Ok((5, -4.0)));
     }
 }

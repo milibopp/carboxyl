@@ -195,3 +195,24 @@ fn bench_chain(b: &mut Bencher) {
         .hold(15);
     b.iter(|| sink.send(-5));
 }
+
+#[test]
+fn snapshot_order_standard() {
+    let sink = Sink::new();
+    let cell = sink.stream().hold(0);
+    let mut iter = cell.snapshot(&sink.stream()).iter();
+    sink.send(1);
+    assert_eq!(iter.next(), Some((0, 1)));
+}
+
+#[test]
+fn snapshot_order_alternative() {
+    let sink = Sink::new();
+    // Invert the "natural" order of the registry by declaring the stream before
+    // the cell, which are both used by the snapshot.
+    let first = sink.stream().map(|x| x);
+    let cell = sink.stream().hold(0);
+    let mut iter = cell.snapshot(&first).iter();
+    sink.send(1);
+    assert_eq!(iter.next(), Some((0, 1)));
+}
