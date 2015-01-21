@@ -216,3 +216,20 @@ fn snapshot_order_alternative() {
     sink.send(1);
     assert_eq!(iter.next(), Some((0, 1)));
 }
+
+#[test]
+fn cyclic_snapshot_accum() {
+    let sink = Sink::<i32>::new();
+    let stream = sink.stream();
+    let accum = Cell::<i32>::cyclic(0, |accum|
+        accum.snapshot(&stream)
+            .map(|(a, s)| a + s)
+    );
+    assert_eq!(accum.sample(), 0);
+    sink.send(3);
+    assert_eq!(accum.sample(), 3);
+    sink.send(7);
+    assert_eq!(accum.sample(), 10);
+    sink.send(-21);
+    assert_eq!(accum.sample(), -11);
+}
