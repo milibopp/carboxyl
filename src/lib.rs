@@ -132,7 +132,7 @@ use std::thread::Thread;
 use subject::{
     Subject, Source, Mapper, WrapArc, Snapper, Merger, Filter, Holder, Lift2,
     WeakSnapperWrapper, SamplingSubject, CellSwitcher, WeakLift2Wrapper,
-    ChannelBuffer, LoopCell, LoopCellEntry,
+    ChannelBuffer, LoopCell, LoopCellEntry, Updates,
 };
 use transaction::commit;
 
@@ -460,6 +460,16 @@ impl<A: Send + Sync + Clone> Cell<A> {
             self.source.lock().ok().expect("Cell::snapshot (self)")
                 .listen(WeakSnapperWrapper::boxed(&source));
             event.source.lock().ok().expect("Cell::snapshot (event)")
+                .listen(source.wrap_as_listener());
+            Stream { source: source.wrap_into_subject() }
+        })
+    }
+
+    /// Creates a stream that fires updates to the cell's current value.
+    pub fn updates(&self) -> Stream<A> {
+        commit((), |_| {
+            let source = Arc::new(Mutex::new(Updates::new(self.source.clone())));
+            self.source.lock().ok().expect("Cell::updates")
                 .listen(source.wrap_as_listener());
             Stream { source: source.wrap_into_subject() }
         })

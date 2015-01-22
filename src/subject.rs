@@ -271,6 +271,30 @@ impl<A: Send + Sync + Clone> Listener<A> for Holder<A> {
 }
 
 
+pub struct Updates<A> {
+    source: Source<A>,
+    #[allow(dead_code)]
+    keep_alive: KeepAliveSample<A>,
+}
+
+impl<A> Updates<A> {
+    pub fn new(keep_alive: KeepAliveSample<A>) -> Updates<A> {
+        Updates { source: Source::new(), keep_alive: keep_alive }
+    }
+}
+
+impl<A: Send + Sync> Subject<A> for Updates<A> {
+    fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
+        self.source.listen(listener);
+    }
+}
+
+impl<A: Send + Sync + Clone> Listener<A> for Updates<A> {
+    fn accept(&mut self, a: A) -> ListenerResult {
+        self.source.accept(a)
+    }
+}
+
 pub struct Snapper<A, B> {
     current: A,
     source: Source<(A, B)>,
