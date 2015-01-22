@@ -102,6 +102,16 @@ fn snapshot_2() {
 }
 
 #[test]
+fn updates() {
+    let sink = Sink::new();
+    let mut iter = sink.stream().hold(0).updates().iter();
+    sink.send(4);
+    assert_eq!(iter.next(), Some(4));
+    sink.send(-14);
+    assert_eq!(iter.next(), Some(-14));
+}
+
+#[test]
 fn lift2_test() {
     let sink1 = Sink::new();
     let sink2 = Sink::new();
