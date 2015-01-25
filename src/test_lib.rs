@@ -112,18 +112,6 @@ fn updates() {
 }
 
 #[test]
-fn lift2_test() {
-    let sink1 = Sink::new();
-    let sink2 = Sink::new();
-    let lifted = lift2(|a, b| a + b, &sink1.stream().hold(0), &sink2.stream().hold(3));
-    assert_eq!(lifted.sample(), 3);
-    sink1.send(1);
-    assert_eq!(lifted.sample(), 4);
-    sink2.send(11);
-    assert_eq!(lifted.sample(), 12);
-}
-
-#[test]
 fn switch() {
     let stream1 = Sink::<Option<i32>>::new();
     let stream2 = Sink::<Option<i32>>::new();
