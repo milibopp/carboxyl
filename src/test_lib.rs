@@ -171,7 +171,7 @@ fn sink_feed() {
     let iter = sink.stream().iter();
     sink.feed(0..10);
     for (n, m) in iter.take(10).enumerate() {
-        assert_eq!(n, m);
+        assert_eq!(n as i32, m);
     }
 }
 
@@ -181,7 +181,7 @@ fn sink_feed_async() {
     let iter = sink.stream().iter();
     sink.feed_async(0..10);
     for (n, m) in iter.take(10).enumerate() {
-        assert_eq!(n, m);
+        assert_eq!(n as i32, m);
     }
 }
 
