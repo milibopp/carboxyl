@@ -118,7 +118,6 @@
 //! functions to the FRP primitives, as they break the benefits you get from
 //! using FRP. (Except temporary print statements for debugging.)
 
-#![feature(unboxed_closures)]
 #![allow(unstable)]
 #![warn(missing_docs)]
 
@@ -135,11 +134,11 @@ use subject::{
     LoopCellEntry,
 };
 use transaction::commit;
-pub use lift::lift2;
 
 mod transaction;
 mod subject;
-mod lift;
+#[macro_use]
+pub mod lift;
 
 
 /// An event sink.
