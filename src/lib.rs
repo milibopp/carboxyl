@@ -118,7 +118,6 @@
 //! functions to the FRP primitives, as they break the benefits you get from
 //! using FRP. (Except temporary print statements for debugging.)
 
-#![feature(unboxed_closures)]
 #![allow(unstable)]
 #![warn(missing_docs)]
 
@@ -130,14 +129,16 @@ extern crate log;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::Thread;
 use subject::{
-    Subject, Source, Mapper, WrapArc, Snapper, Merger, Filter, Holder, Lift2,
-    WeakSnapperWrapper, SamplingSubject, CellSwitcher, WeakLift2Wrapper,
-    ChannelBuffer, LoopCell, LoopCellEntry, Updates,
+    Subject, Source, Mapper, WrapArc, Snapper, Merger, Filter, Holder, Updates,
+    WeakSnapperWrapper, SamplingSubject, CellSwitcher, ChannelBuffer, LoopCell,
+    LoopCellEntry,
 };
 use transaction::commit;
 
 mod transaction;
 mod subject;
+#[macro_use]
+pub mod lift;
 
 
 /// An event sink.
@@ -597,50 +598,6 @@ impl<A: Send + Sync + Clone> Cell<Cell<A>> {
             Cell { source: source.wrap_into_sampling_subject() }
         })
     }
-}
-
-
-/// Lift a two-argument function to a function on cells.
-///
-/// A lift maps a function on values to a function on cells. This particular
-/// function works only with a two-argument function and effectively turns two
-/// cells over types `A` and `B` into a cell over type `C`, given a function of
-/// type `F: Fn(A, B) -> C` by simply applying it two the inner values of the
-/// cells. So essentially `f(ba.sample(), bb.sample())` is the same as
-/// `lift2(f, ba, bb).sample()`.
-///
-/// The following example multiplies two behaviours:
-///
-/// ```
-/// # use carboxyl::{Sink, lift2};
-/// let sink_a = Sink::<i32>::new();
-/// let sink_b = Sink::<i32>::new();
-/// let product = lift2(
-///     |a, b| a * b,
-///     &sink_a.stream().hold(0),
-///     &sink_b.stream().hold(0)
-/// );
-/// assert_eq!(product.sample(), 0);
-/// sink_a.send(3);
-/// sink_b.send(5);
-/// assert_eq!(product.sample(), 15);
-/// ```
-pub fn lift2<A, B, C, F>(f: F, ba: &Cell<A>, bb: &Cell<B>) -> Cell<C>
-    where A: Send + Sync + Clone,
-          B: Send + Sync + Clone,
-          C: Send + Sync + Clone,
-          F: Fn(A, B) -> C + Send + Sync,
-{
-    commit((f, ba, bb), |(f, ba, bb)| {
-        let source = Arc::new(Mutex::new(Lift2::new(
-            (ba.sample_nocommit(), bb.sample_nocommit()), f, (ba.source.clone(), bb.source.clone())
-        )));
-        ba.source.lock().ok().expect("lift2 (ba)")
-            .listen(source.wrap_as_listener());
-        bb.source.lock().ok().expect("lift2 (bb)")
-            .listen(WeakLift2Wrapper::boxed(&source));
-        Cell { source: source.wrap_into_sampling_subject() }
-    })
 }
 
 
