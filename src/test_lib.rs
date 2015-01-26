@@ -54,7 +54,7 @@ fn hold() {
 
 #[test]
 fn chain_1() {
-    let sink = Sink::<i32>::new();
+    let sink: Sink<i32> = Sink::new();
     let chain = sink.stream().map(|x| x / 2).filter_with(|&x| x < 3);
     let mut iter = chain.iter();
     sink.send(7);
@@ -217,9 +217,9 @@ fn snapshot_order_alternative() {
 
 #[test]
 fn cyclic_snapshot_accum() {
-    let sink = Sink::<i32>::new();
+    let sink = Sink::new();
     let stream = sink.stream();
-    let accum = Cell::<i32>::cyclic(0, |accum|
+    let accum: Cell<i32> = Cell::cyclic(0, |accum|
         accum.snapshot(&stream)
             .map(|(a, s)| a + s)
     );

@@ -39,7 +39,7 @@
 //! ```
 //! use carboxyl::Sink;
 //!
-//! let sink = Sink::<i32>::new();
+//! let sink = Sink::new();
 //! let stream = sink.stream();
 //! let cell = stream.hold(3);
 //!
@@ -56,7 +56,7 @@
 //!
 //! ```
 //! # use carboxyl::Sink;
-//! # let sink = Sink::<i32>::new();
+//! # let sink = Sink::new();
 //! # let stream = sink.stream();
 //! let mut iter = stream.iter();
 //! sink.send(4);
@@ -68,7 +68,7 @@
 //!
 //! ```
 //! # use carboxyl::Sink;
-//! # let sink = Sink::<i32>::new();
+//! # let sink: Sink<i32> = Sink::new();
 //! # let stream = sink.stream();
 //! let squares = stream.map(|x| x * x).hold(0);
 //! sink.send(4);
@@ -80,7 +80,7 @@
 //!
 //! ```
 //! # use carboxyl::Sink;
-//! # let sink = Sink::<i32>::new();
+//! # let sink: Sink<i32> = Sink::new();
 //! # let stream = sink.stream();
 //! let negatives = stream.filter_with(|&x| x < 0).hold(0);
 //!
@@ -282,7 +282,7 @@ impl<A: Send + Sync + Clone> Stream<A> {
     ///
     /// ```
     /// # use carboxyl::Sink;
-    /// let sink = Sink::<i32>::new();
+    /// let sink: Sink<i32> = Sink::new();
     /// let mut iter = sink.stream().map(|x| x + 4).iter();
     /// sink.send(3);
     /// assert_eq!(iter.next(), Some(7));
@@ -306,7 +306,7 @@ impl<A: Send + Sync + Clone> Stream<A> {
     ///
     /// ```
     /// # use carboxyl::Sink;
-    /// let sink = Sink::<i32>::new();
+    /// let sink: Sink<i32> = Sink::new();
     /// let mut iter = sink.stream()
     ///     .filter_with(|&x| (x >= 4) && (x <= 10))
     ///     .iter();
