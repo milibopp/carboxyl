@@ -268,6 +268,12 @@ impl<A> Clone for Stream<A> {
 }
 
 impl<A: Send + Sync + Clone> Stream<A> {
+    /// A stream that never fires. This can be useful in certain situations,
+    /// where a stream is logically required, but no events are expected.
+    pub fn never() -> Stream<A> {
+        Sink::new().stream()
+    }
+
     /// Map the stream to another stream using a function.
     ///
     /// `map` applies a function to every event fired in this stream to create a
