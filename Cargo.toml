@@ -8,4 +8,4 @@ homepage = "https://github.com/aepsil0n/carboxyl"
 repository = "https://github.com/aepsil0n/carboxyl"
 readme = "README.md"
 keywords = ["frp", "reactive", "event", "concurrency"]
-license = "GPL-3.0+"
+license = "LGPL-3.0+"
