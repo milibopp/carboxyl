@@ -8,7 +8,7 @@ use Cell;
 use transaction::register_callback;
 
 
-#[derive(Copy, Show)]
+#[derive(Copy, Debug)]
 pub enum ListenerError {
     Disappeared,
     Poisoned,
