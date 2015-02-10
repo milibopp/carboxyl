@@ -126,6 +126,7 @@ extern crate test;
 
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::Thread;
+use std::ops::Deref;
 use subject::{
     Subject, Source, Mapper, WrapArc, Snapper, Merger, Filter, Holder, Updates,
     WeakSnapperWrapper, SamplingSubject, CellSwitcher, ChannelBuffer, LoopCell,
@@ -382,7 +383,9 @@ impl<A: Send + Sync + Clone> Stream<A> {
         where B: Send + Sync + Clone,
               F: Fn((B, A)) -> B + Send + Sync,
     {
-        Cell::cyclic(initial, move |state| state.snapshot(self).map(acc))
+        let accum = CellCycle::new(initial.clone());
+        let def = accum.snapshot(self).map(acc).hold(initial);
+        accum.define(def)
     }
 }
 
@@ -480,39 +483,6 @@ impl<A: Send + Sync + Clone> Cell<A> {
         })
     }
 
-    /// Create a cell with a cyclic reference.
-    ///
-    /// Given a function `cycle` that maps a `cell` to a stream `cycle(cell)`
-    /// and some `initial` value, this constructor essentially creates a cyclic
-    /// pattern, where the resulting cell behaves as if it were defined as
-    /// `cell = cycle(cell).hold(initial)`.
-    ///
-    /// This pattern is useful to implement accumulators, counters and other
-    /// loops that depend on the state of a cell before a transaction.
-    #[unstable="may change once internals are cleaned up"]
-    pub fn cyclic<F: FnOnce(&Cell<A>) -> Stream<A>>(initial: A, cycle: F) -> Cell<A> {
-        let dummy_source = Arc::new(Mutex::new(LoopCellEntry::new(initial.clone())));
-        let result = cycle(&Cell {
-                source: dummy_source.wrap_as_sampling_subject()
-            })
-            .hold(initial);
-        commit((), move |_| {
-            result.source.lock().ok()
-                .expect("Cell::cyclic (result listen #1)")
-                .listen(dummy_source.wrap_as_listener());
-            let source = Arc::new(Mutex::new(LoopCell::new(
-                result.sample_nocommit(),
-                (
-                    dummy_source.wrap_as_sampling_subject(),
-                    result.source.clone(),
-                )
-            )));
-            result.source.lock().ok()
-                .expect("Cell::cyclic (result listen #2)")
-                .listen(source.wrap_as_listener());
-            Cell { source: source.wrap_into_sampling_subject() }
-        })
-    }
 }
 
 impl<A: Send + Sync + Clone> Cell<Cell<A>> {
@@ -602,6 +572,56 @@ impl<A: Send + Sync + Clone> Cell<Cell<A>> {
             Cell { source: source.wrap_into_sampling_subject() }
         })
     }
+}
+
+
+/// Forward declaration of a cell to create value loops
+///
+/// This pattern is useful to implement accumulators, counters and other
+/// loops that depend on the state of a cell before a transaction.
+pub struct CellCycle<A> {
+    dummy: Arc<Mutex<LoopCellEntry<A>>>,
+    cell: Cell<A>,
+}
+
+impl<A: Clone + Send + Sync> CellCycle<A> {
+    /// Predeclare a cell
+    ///
+    /// FIXME: the `initial` parameter is unfortunately necessary due to a lack
+    /// of laziness in the implementation.
+    pub fn new(initial: A) -> CellCycle<A> {
+        let dummy = Arc::new(Mutex::new(LoopCellEntry::new(initial)));
+        let cell = Cell { source: dummy.wrap_as_sampling_subject() };
+        CellCycle {
+            dummy: dummy,
+            cell: cell,
+        }
+    }
+
+    /// Provide a definition to obtain a cell
+    pub fn define(self, definition: Cell<A>) -> Cell<A> {
+        commit((), move |_| {
+            definition.source.lock().ok()
+                .expect("Cell::cyclic (result listen #1)")
+                .listen(self.dummy.wrap_as_listener());
+            let source = Arc::new(Mutex::new(LoopCell::new(
+                definition.sample_nocommit(),
+                (
+                    self.dummy.wrap_as_sampling_subject(),
+                    definition.source.clone(),
+                )
+            )));
+            definition.source.lock().ok()
+                .expect("Cell::cyclic (result listen #2)")
+                .listen(source.wrap_as_listener());
+            Cell { source: source.wrap_into_sampling_subject() }
+        })
+    }
+}
+
+impl<A> Deref for CellCycle<A> {
+    type Target = Cell<A>;
+    fn deref(&self) -> &Cell<A> { &self.cell }
 }
 
 
