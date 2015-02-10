@@ -219,10 +219,9 @@ fn snapshot_order_alternative() {
 fn cyclic_snapshot_accum() {
     let sink = Sink::new();
     let stream = sink.stream();
-    let accum: Cell<i32> = Cell::cyclic(0, |accum|
-        accum.snapshot(&stream)
-            .map(|(a, s)| a + s)
-    );
+    let accum = CellCycle::new(0);
+    let def = accum.snapshot(&stream).map(|(a, s)| a + s).hold(0);
+    let accum = accum.define(def);
     assert_eq!(accum.sample(), 0);
     sink.send(3);
     assert_eq!(accum.sample(), 3);
