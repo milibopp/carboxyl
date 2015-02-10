@@ -118,13 +118,11 @@
 //! functions to the FRP primitives, as they break the benefits you get from
 //! using FRP. (Except temporary print statements for debugging.)
 
-#![allow(unstable)]
+#![feature(core, alloc, std_misc, collections)]
 #![warn(missing_docs)]
 
 #[cfg(test)]
 extern crate test;
-#[macro_use]
-extern crate log;
 
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::Thread;
@@ -232,7 +230,7 @@ impl<A: Send + Sync + Clone> Sink<A> {
     /// Feed values from an iterator into the sink.
     ///
     /// This method feeds events into the sink from an iterator.
-    pub fn feed<I: Iterator<Item=A>>(&self, mut iterator: I) {
+    pub fn feed<I: Iterator<Item=A>>(&self, iterator: I) {
         for event in iterator {
             self.send(event);
         }
@@ -491,7 +489,7 @@ impl<A: Send + Sync + Clone> Cell<A> {
     ///
     /// This pattern is useful to implement accumulators, counters and other
     /// loops that depend on the state of a cell before a transaction.
-    #[experimental="may change once internals are cleaned up"]
+    #[unstable="may change once internals are cleaned up"]
     pub fn cyclic<F: FnOnce(&Cell<A>) -> Stream<A>>(initial: A, cycle: F) -> Cell<A> {
         let dummy_source = Arc::new(Mutex::new(LoopCellEntry::new(initial.clone())));
         let result = cycle(&Cell {
