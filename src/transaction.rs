@@ -35,7 +35,8 @@ pub fn commit<A, B, F: FnOnce(A) -> B>(args: A, transaction: F) -> B {
     let result = transaction(args);
     // Call all finalizers
     FINAL_CALLBACKS.with(|store| {
-        for callback in store.borrow_mut().drain() {
+        let mut store = store.borrow_mut();
+        for callback in store.drain() {
             callback();
         }
     });
