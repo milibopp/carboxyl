@@ -128,7 +128,9 @@ fn switch() {
             .hold(Sink::new().stream().hold(Some(-3)))
             .switch()
     };
+    let fn_output = lift!(|x| x.map_or(0, |x| 2*x), &output);
     assert_eq!(output.sample(), Some(-3));
+    assert_eq!(fn_output.sample(), -6);
     button1.send(());
     assert_eq!(output.sample(), Some(-1));
     button2.send(());
@@ -136,8 +138,10 @@ fn switch() {
     button1.send(());
     stream1.send(Some(6));
     assert_eq!(output.sample(), Some(6));
+    assert_eq!(fn_output.sample(), 12);
     stream1.send(Some(12));
     assert_eq!(output.sample(), Some(12));
+    assert_eq!(fn_output.sample(), 24);
 }
 
 #[test]
@@ -229,4 +233,64 @@ fn cyclic_snapshot_accum() {
     assert_eq!(accum.sample(), 10);
     sink.send(-21);
     assert_eq!(accum.sample(), -11);
+}
+
+#[test]
+fn nested_transactions() {
+    let sink = Sink::new();
+    let stream = sink.stream();
+    let switched = stream
+        .map(|k| Stream::never().hold(k))
+        .hold(Stream::never().hold(0))
+        .switch();
+    assert_eq!(switched.sample(), 0);
+    sink.send(3);
+    assert_eq!(switched.sample(), 3);
+    sink.send(5);
+    assert_eq!(switched.sample(), 5);
+}
+
+#[test]
+fn drag_drop_example() {
+    #[derive(Copy, Debug, Clone)]
+    enum Event { Add(i32), Drag(usize, i32), Drop }
+    let sink = Sink::new();
+    let rects = CellCycle::<Vec<i32>>::new(vec![100]);
+    let events = sink.stream();
+
+    let spawned = rects.snapshot(&events)
+        .map(|(mut rects, ev)| match ev {
+            Event::Add(r) => { rects.push(r); rects },
+            _ => rects,
+        })
+        .hold(vec![300]);
+
+    let new_rects = events.map({
+        let spawned = spawned.clone();
+        move |ev| match ev {
+            Event::Drag(idx, pos) => {
+            Some(lift!(
+                move |mut rects| {
+                    rects[idx] += pos;
+                    rects
+                },
+                &spawned
+            ))},
+            Event::Drop => Some(spawned.clone()),
+            _ => None,
+        }})
+        .filter()
+        .hold(spawned.clone())
+        .switch();
+    let rects = rects.define(new_rects.clone());
+
+    assert_eq!(rects.sample(), vec![300]);
+    sink.send(Event::Add(61));
+    assert_eq!(rects.sample(), vec![300, 61]);
+    sink.send(Event::Add(66));
+    assert_eq!(rects.sample(), vec![300, 61, 66]);
+    sink.send(Event::Drop);
+    assert_eq!(rects.sample(), vec![300, 61, 66]);
+    sink.send(Event::Drag(1, 10));
+    assert_eq!(rects.sample(), vec![300, 71, 66]);
 }

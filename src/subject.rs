@@ -383,18 +383,42 @@ impl<A: Send + Sync> Subject<A> for Merger<A> {
 pub struct CellSwitcher<A> {
     current: Cell<A>,
     source: Source<A>,
+    cell_listener: Arc<Mutex<WeakSwitcherWrapper<A>>>,
+    weak_self: Weak<Mutex<CellSwitcher<A>>>,
     #[allow(dead_code)]
     keep_alive: KeepAliveSample<Cell<A>>,
 }
 
-impl<A> CellSwitcher<A> {
-    pub fn new(initial: Cell<A>, keep_alive: KeepAliveSample<Cell<A>>) -> CellSwitcher<A> {
-        CellSwitcher { current: initial, source: Source::new(), keep_alive: keep_alive }
+impl<A: Send + Sync + Clone> CellSwitcher<A> {
+    pub fn new(initial: Cell<A>, keep_alive: KeepAliveSample<Cell<A>>) -> Arc<Mutex<CellSwitcher<A>>> {
+        use std::mem;
+        let switcher = Arc::new(Mutex::new(CellSwitcher {
+            current: initial.clone(),
+            source: Source::new(),
+            cell_listener: unsafe { mem::uninitialized() },
+            weak_self: unsafe { mem::uninitialized() },
+            keep_alive: keep_alive,
+        }));
+        let wrapper = Arc::new(Mutex::new(WeakSwitcherWrapper::new(switcher.downgrade())));
+        initial.source.lock().ok()
+            .expect("CellSwitcher::new")
+            .listen(wrapper.wrap_as_listener());
+        {
+            let mut lock = switcher.lock().unwrap();
+            lock.cell_listener = wrapper;
+            lock.weak_self = switcher.downgrade();
+        }
+        switcher
     }
 }
 
 impl<A: Send + Sync + Clone> Listener<Cell<A>> for CellSwitcher<A> {
     fn accept(&mut self, cell: Cell<A>) -> ListenerResult {
+        let wrapper = Arc::new(Mutex::new(WeakSwitcherWrapper::new(self.weak_self.clone())));
+        cell.source.lock().ok()
+            .expect("CellSwitcher::accept")
+            .listen(wrapper.wrap_as_listener());
+        self.cell_listener = wrapper;
         self.current = cell;
         self.source.accept(self.current.sample_nocommit())
     }
@@ -409,6 +433,33 @@ impl<A: Send + Sync + Clone> Subject<A> for CellSwitcher<A> {
 impl<A: Send + Sync + Clone> Sample<A> for CellSwitcher<A> {
     fn sample(&self) -> A {
         self.current.sample_nocommit()
+    }
+}
+
+
+pub struct WeakSwitcherWrapper<A> {
+    weak: Weak<Mutex<CellSwitcher<A>>>,
+}
+
+impl<A> WeakSwitcherWrapper<A>
+    where A: Send + Sync + Clone,
+{
+    pub fn new(weak: Weak<Mutex<CellSwitcher<A>>>) -> WeakSwitcherWrapper<A> {
+        WeakSwitcherWrapper { weak: weak }
+    }
+}
+
+impl<A> Listener<A> for WeakSwitcherWrapper<A>
+    where A: Send + Sync + Clone,
+{
+    fn accept(&mut self, a: A) -> ListenerResult {
+        match self.weak.upgrade() {
+            Some(arc) => match arc.lock() {
+                Ok(mut switcher) => switcher.source.accept(a),
+                Err(_) => Err(ListenerError::Poisoned),
+            },
+            None => Err(ListenerError::Disappeared),
+        }
     }
 }
 
