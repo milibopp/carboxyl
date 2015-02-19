@@ -16,7 +16,7 @@ pub enum ListenerError {
 
 pub type ListenerResult = Result<(), ListenerError>;
 
-pub trait Listener<A>: Send + Sync {
+pub trait Listener<A>: Send + Sync + 'static {
     fn accept(&mut self, a: A) -> ListenerResult;
 }
 
@@ -26,14 +26,14 @@ pub struct WeakListenerWrapper<L> {
 
 impl<L> WeakListenerWrapper<L> {
     pub fn boxed<A>(strong: &Arc<Mutex<L>>) -> Box<Listener<A> + 'static>
-        where L: Listener<A>, A: Send + Sync,
+        where L: Listener<A>, A: Send + Sync + 'static,
     {
         Box::new(WeakListenerWrapper { weak: strong.downgrade() })
     }
 }
 
 impl<A, L> Listener<A> for WeakListenerWrapper<L>
-    where L: Listener<A> + Send + Sync, A: Send + Sync
+    where L: Listener<A> + Send + Sync + 'static, A: Send + Sync + 'static
 {
     fn accept(&mut self, a: A) -> ListenerResult {
         match self.weak.upgrade() {
@@ -57,7 +57,7 @@ pub struct StrongSubjectWrapper<S> {
 }
 
 impl<A, S> Subject<A> for StrongSubjectWrapper<S>
-    where S: Subject<A> + Send + Sync, A: Send + Sync
+    where S: Subject<A> + Send + Sync + 'static, A: Send + Sync + 'static
 {
     fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
         self.arc.lock().ok().expect("StrongSubjectWrapper::listen").listen(listener);
@@ -65,7 +65,7 @@ impl<A, S> Subject<A> for StrongSubjectWrapper<S>
 }
 
 impl<A, S> Sample<A> for StrongSubjectWrapper<S>
-    where S: Sample<A> + Send + Sync, A: Send + Sync
+    where S: Sample<A> + Send + Sync + 'static, A: Send + Sync + 'static
 {
     fn sample(&self) -> A {
         self.arc.lock().ok().expect("StrongSubjectWrapper::sample").sample()
@@ -75,51 +75,51 @@ impl<A, S> Sample<A> for StrongSubjectWrapper<S>
 
 pub trait WrapArc<L> {
     fn wrap_as_listener<A>(&self) -> Box<Listener<A> + 'static>
-        where L: Listener<A>, A: Send + Sync;
+        where L: Listener<A>, A: Send + Sync + 'static;
     fn wrap_as_subject<A>(&self) -> KeepAlive<A>
-        where L: Subject<A>, A: Send + Sync + Clone;
+        where L: Subject<A>, A: Send + Sync + Clone + 'static;
     fn wrap_into_subject<A>(self) -> KeepAlive<A>
-        where L: Subject<A>, A: Send + Sync + Clone;
+        where L: Subject<A>, A: Send + Sync + Clone + 'static;
     fn wrap_as_sampling_subject<A>(&self) -> KeepAliveSample<A>
-        where L: SamplingSubject<A>, A: Send + Sync + Clone;
+        where L: SamplingSubject<A>, A: Send + Sync + Clone + 'static;
     fn wrap_into_sampling_subject<A>(self) -> KeepAliveSample<A>
-        where L: SamplingSubject<A>, A: Send + Sync + Clone;
+        where L: SamplingSubject<A>, A: Send + Sync + Clone + 'static;
 }
 
 impl<L> WrapArc<L> for Arc<Mutex<L>> {
     fn wrap_as_listener<A>(&self) -> Box<Listener<A> + 'static>
-        where L: Listener<A>, A: Send + Sync
+        where L: Listener<A>, A: Send + Sync + 'static
     {
         WeakListenerWrapper::boxed(self)
     }
 
     fn wrap_as_subject<A>(&self) -> KeepAlive<A>
-        where L: Subject<A>, A: Send + Sync + Clone
+        where L: Subject<A>, A: Send + Sync + Clone + 'static
     {
         Arc::new(Mutex::new(Box::new(StrongSubjectWrapper { arc: self.clone() })))
     }
 
     fn wrap_into_subject<A>(self) -> KeepAlive<A>
-        where L: Subject<A>, A: Send + Sync + Clone
+        where L: Subject<A>, A: Send + Sync + Clone + 'static
     {
         Arc::new(Mutex::new(Box::new(StrongSubjectWrapper { arc: self })))
     }
 
     fn wrap_as_sampling_subject<A>(&self) -> KeepAliveSample<A>
-        where L: SamplingSubject<A>, A: Send + Sync + Clone
+        where L: SamplingSubject<A>, A: Send + Sync + Clone + 'static
     {
         Arc::new(Mutex::new(Box::new(StrongSubjectWrapper { arc: self.clone() })))
     }
 
     fn wrap_into_sampling_subject<A>(self) -> KeepAliveSample<A>
-        where L: SamplingSubject<A>, A: Send + Sync + Clone
+        where L: SamplingSubject<A>, A: Send + Sync + Clone + 'static
     {
         Arc::new(Mutex::new(Box::new(StrongSubjectWrapper { arc: self })))
     }
 }
 
 
-pub trait Subject<A>: Send + Sync {
+pub trait Subject<A>: Send + Sync + 'static {
     fn listen(&mut self, listener: Box<Listener<A> + 'static>);
 }
 
@@ -144,7 +144,7 @@ impl<A> Source<A> {
     }
 }
 
-impl<A: Send + Sync + Clone> Source<A> {
+impl<A: Send + Sync + Clone + 'static> Source<A> {
     pub fn send(&mut self, a: A) {
         use std::mem;
         let mut new_listeners = vec!();
@@ -162,14 +162,14 @@ impl<A: Send + Sync + Clone> Source<A> {
     }
 }
 
-impl<A: Send + Sync + Clone> Listener<A> for Source<A> {
+impl<A: Send + Sync + Clone + 'static> Listener<A> for Source<A> {
     fn accept(&mut self, a: A) -> ListenerResult {
         self.send(a);
         Ok(())
     }
 }
 
-impl<A: Send + Sync> Subject<A> for Source<A> {
+impl<A: Send + Sync + 'static> Subject<A> for Source<A> {
     fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
         self.listeners.push(listener);
     }
@@ -190,9 +190,9 @@ impl<A, B, F: Fn(A) -> B> Mapper<A, B, F> {
 }
 
 impl<A, B, F> Subject<B> for Mapper<A, B, F>
-    where A: Send + Sync + Clone,
-          B: Send + Sync + Clone,
-          F: Fn(A) -> B + Send + Sync,
+    where A: Send + Sync + Clone + 'static,
+          B: Send + Sync + Clone + 'static,
+          F: Fn(A) -> B + Send + Sync + 'static,
 {
     fn listen(&mut self, listener: Box<Listener<B> + 'static>) {
         self.source.listen(listener);
@@ -200,9 +200,9 @@ impl<A, B, F> Subject<B> for Mapper<A, B, F>
 }
 
 impl<A, B, F> Listener<A> for Mapper<A, B, F>
-    where A: Send + Sync,
-          B: Send + Sync + Clone,
-          F: Fn(A) -> B + Send + Sync,
+    where A: Send + Sync + 'static,
+          B: Send + Sync + Clone + 'static,
+          F: Fn(A) -> B + Send + Sync + 'static,
 {
     fn accept(&mut self, a: A) -> ListenerResult {
         self.source.accept((self.func)(a))
@@ -222,14 +222,14 @@ impl<A> Filter<A> {
     }
 }
 
-impl<A: Send + Sync> Subject<A> for Filter<A> {
+impl<A: Send + Sync + 'static> Subject<A> for Filter<A> {
     fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
         self.source.listen(listener);
     }
 }
 
 impl<A> Listener<Option<A>> for Filter<A>
-    where A: Send + Sync + Clone,
+    where A: Send + Sync + Clone + 'static,
 {
     fn accept(&mut self, a: Option<A>) -> ListenerResult {
         match a {
@@ -257,13 +257,13 @@ impl<A: Clone> Sample<A> for Holder<A> {
     fn sample(&self) -> A { self.current.clone() }
 }
 
-impl<A: Send + Sync> Subject<A> for Holder<A> {
+impl<A: Send + Sync + 'static> Subject<A> for Holder<A> {
     fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
         self.source.listen(listener);
     }
 }
 
-impl<A: Send + Sync + Clone> Listener<A> for Holder<A> {
+impl<A: Send + Sync + Clone + 'static> Listener<A> for Holder<A> {
     fn accept(&mut self, a: A) -> ListenerResult {
         self.current = a.clone();
         self.source.accept(a)
@@ -283,13 +283,13 @@ impl<A> Updates<A> {
     }
 }
 
-impl<A: Send + Sync> Subject<A> for Updates<A> {
+impl<A: Send + Sync + 'static> Subject<A> for Updates<A> {
     fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
         self.source.listen(listener);
     }
 }
 
-impl<A: Send + Sync + Clone> Listener<A> for Updates<A> {
+impl<A: Send + Sync + Clone + 'static> Listener<A> for Updates<A> {
     fn accept(&mut self, a: A) -> ListenerResult {
         self.source.accept(a)
     }
@@ -312,13 +312,13 @@ impl<A, B> Snapper<A, B> {
     }
 }
 
-impl<A: Send + Sync + Clone, B: Send + Sync + Clone> Listener<B> for Snapper<A, B> {
+impl<A: Send + Sync + Clone + 'static, B: Send + Sync + Clone + 'static> Listener<B> for Snapper<A, B> {
     fn accept(&mut self, b: B) -> ListenerResult {
         self.source.accept((self.current.clone(), b))
     }
 }
 
-impl<A: Send + Sync, B: Send + Sync> Subject<(A, B)> for Snapper<A, B> {
+impl<A: Send + Sync + 'static, B: Send + Sync + 'static> Subject<(A, B)> for Snapper<A, B> {
     fn listen(&mut self, listener: Box<Listener<(A, B)> + 'static>) {
         self.source.listen(listener);
     }
@@ -329,13 +329,13 @@ pub struct WeakSnapperWrapper<A, B> {
     weak: Weak<Mutex<Snapper<A, B>>>,
 }
 
-impl<A: Clone + Send + Sync, B: Send + Sync> WeakSnapperWrapper<A, B> {
+impl<A: Clone + Send + Sync + 'static, B: Send + Sync + 'static> WeakSnapperWrapper<A, B> {
     pub fn boxed(strong: &Arc<Mutex<Snapper<A, B>>>) -> Box<Listener<A> + 'static> {
         Box::new(WeakSnapperWrapper { weak: strong.downgrade() })
     }
 }
 
-impl<A: Clone + Send + Sync, B: Send + Sync> Listener<A> for WeakSnapperWrapper<A, B> {
+impl<A: Clone + Send + Sync + 'static, B: Send + Sync + 'static> Listener<A> for WeakSnapperWrapper<A, B> {
     fn accept(&mut self, a: A) -> ListenerResult {
         let weak = self.weak.clone();
         register_callback(move || {
@@ -367,13 +367,13 @@ impl<A> Merger<A> {
     }
 }
 
-impl<A: Send + Sync + Clone> Listener<A> for Merger<A> {
+impl<A: Send + Sync + Clone + 'static> Listener<A> for Merger<A> {
     fn accept(&mut self, a: A) -> ListenerResult {
         self.source.accept(a)
     }
 }
 
-impl<A: Send + Sync> Subject<A> for Merger<A> {
+impl<A: Send + Sync + 'static> Subject<A> for Merger<A> {
     fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
         self.source.listen(listener);
     }
@@ -389,7 +389,7 @@ pub struct CellSwitcher<A> {
     keep_alive: KeepAliveSample<Cell<A>>,
 }
 
-impl<A: Send + Sync + Clone> CellSwitcher<A> {
+impl<A: Send + Sync + Clone + 'static> CellSwitcher<A> {
     pub fn new(initial: Cell<A>, keep_alive: KeepAliveSample<Cell<A>>) -> Arc<Mutex<CellSwitcher<A>>> {
         use std::mem;
         let switcher = Arc::new(Mutex::new(CellSwitcher {
@@ -412,7 +412,7 @@ impl<A: Send + Sync + Clone> CellSwitcher<A> {
     }
 }
 
-impl<A: Send + Sync + Clone> Listener<Cell<A>> for CellSwitcher<A> {
+impl<A: Send + Sync + Clone + 'static> Listener<Cell<A>> for CellSwitcher<A> {
     fn accept(&mut self, cell: Cell<A>) -> ListenerResult {
         let wrapper = Arc::new(Mutex::new(WeakSwitcherWrapper::new(self.weak_self.clone())));
         cell.source.lock().ok()
@@ -424,13 +424,13 @@ impl<A: Send + Sync + Clone> Listener<Cell<A>> for CellSwitcher<A> {
     }
 }
 
-impl<A: Send + Sync + Clone> Subject<A> for CellSwitcher<A> {
+impl<A: Send + Sync + Clone + 'static> Subject<A> for CellSwitcher<A> {
     fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
         self.source.listen(listener);
     }
 }
 
-impl<A: Send + Sync + Clone> Sample<A> for CellSwitcher<A> {
+impl<A: Send + Sync + Clone + 'static> Sample<A> for CellSwitcher<A> {
     fn sample(&self) -> A {
         self.current.sample_nocommit()
     }
@@ -442,7 +442,7 @@ pub struct WeakSwitcherWrapper<A> {
 }
 
 impl<A> WeakSwitcherWrapper<A>
-    where A: Send + Sync + Clone,
+    where A: Send + Sync + Clone + 'static,
 {
     pub fn new(weak: Weak<Mutex<CellSwitcher<A>>>) -> WeakSwitcherWrapper<A> {
         WeakSwitcherWrapper { weak: weak }
@@ -450,7 +450,7 @@ impl<A> WeakSwitcherWrapper<A>
 }
 
 impl<A> Listener<A> for WeakSwitcherWrapper<A>
-    where A: Send + Sync + Clone,
+    where A: Send + Sync + Clone + 'static,
 {
     fn accept(&mut self, a: A) -> ListenerResult {
         match self.weak.upgrade() {
@@ -472,7 +472,7 @@ pub struct Lift2<A, B, C, F> {
     keep_alive: (KeepAliveSample<A>, KeepAliveSample<B>),
 }
 
-impl<A, B, C: Send + Sync, F> Lift2<A, B, C, F> {
+impl<A, B, C: Send + Sync + 'static, F> Lift2<A, B, C, F> {
     pub fn new(initial: (A, B), f: F, keep_alive: (KeepAliveSample<A>, KeepAliveSample<B>))
         -> Lift2<A, B, C, F>
     {
@@ -486,10 +486,10 @@ impl<A, B, C: Send + Sync, F> Lift2<A, B, C, F> {
 }
 
 impl<A, B, C, F> Subject<C> for Lift2<A, B, C, F>
-    where A: Send + Sync,
-          B: Send + Sync,
-          C: Send + Sync + Clone,
-          F: Send + Sync,
+    where A: Send + Sync + 'static,
+          B: Send + Sync + 'static,
+          C: Send + Sync + Clone + 'static,
+          F: Send + Sync + 'static,
 {
     fn listen(&mut self, listener: Box<Listener<C> + 'static>) {
         self.source.listen(listener);
@@ -497,10 +497,10 @@ impl<A, B, C, F> Subject<C> for Lift2<A, B, C, F>
 }
 
 impl<A, B, C, F> Listener<A> for Lift2<A, B, C, F>
-    where A: Send + Sync + Clone,
-          B: Send + Sync + Clone,
-          C: Send + Sync + Clone,
-          F: Fn(A, B) -> C + Send + Sync,
+    where A: Send + Sync + Clone + 'static,
+          B: Send + Sync + Clone + 'static,
+          C: Send + Sync + Clone + 'static,
+          F: Fn(A, B) -> C + Send + Sync + 'static,
 {
     fn accept(&mut self, a: A) -> ListenerResult {
         self.current.0 = a;
@@ -526,10 +526,10 @@ pub struct WeakLift2Wrapper<A, B, C, F> {
 }
 
 impl<A, B, C, F> WeakLift2Wrapper<A, B, C, F>
-    where A: Send + Sync + Clone,
-          B: Send + Sync + Clone,
-          C: Send + Sync + Clone,
-          F: Fn(A, B) -> C + Send + Sync,
+    where A: Send + Sync + Clone + 'static,
+          B: Send + Sync + Clone + 'static,
+          C: Send + Sync + Clone + 'static,
+          F: Fn(A, B) -> C + Send + Sync + 'static,
 {
     pub fn boxed(strong: &Arc<Mutex<Lift2<A, B, C, F>>>) -> Box<Listener<B> + 'static> {
         Box::new(WeakLift2Wrapper { weak: strong.downgrade() })
@@ -537,10 +537,10 @@ impl<A, B, C, F> WeakLift2Wrapper<A, B, C, F>
 }
 
 impl<A, B, C, F> Listener<B> for WeakLift2Wrapper<A, B, C, F>
-    where A: Send + Sync + Clone,
-          B: Send + Sync + Clone,
-          C: Send + Sync + Clone,
-          F: Fn(A, B) -> C + Send + Sync,
+    where A: Send + Sync + Clone + 'static,
+          B: Send + Sync + Clone + 'static,
+          C: Send + Sync + Clone + 'static,
+          F: Fn(A, B) -> C + Send + Sync + 'static,
 {
     fn accept(&mut self, b: B) -> ListenerResult {
         match self.weak.upgrade() {
@@ -583,13 +583,13 @@ impl<A> LoopCell<A> {
     }
 }
 
-impl<A: Send + Sync + Clone> Subject<A> for LoopCell<A> {
+impl<A: Send + Sync + Clone + 'static> Subject<A> for LoopCell<A> {
     fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
         self.source.listen(listener);
     }
 }
 
-impl<A: Send + Sync + Clone> Listener<A> for LoopCell<A> {
+impl<A: Send + Sync + Clone + 'static> Listener<A> for LoopCell<A> {
     fn accept(&mut self, a: A) -> ListenerResult {
         self.current = a.clone();
         self.source.accept(a)
@@ -622,13 +622,13 @@ impl<A> LoopCellEntry<A> {
     }
 }
 
-impl<A: Send + Sync + Clone> Subject<A> for LoopCellEntry<A> {
+impl<A: Send + Sync + Clone + 'static> Subject<A> for LoopCellEntry<A> {
     fn listen(&mut self, listener: Box<Listener<A> + 'static>) {
         self.source.listen(listener);
     }
 }
 
-impl<A: Send + Sync + Clone> Listener<A> for LoopCellEntry<A> {
+impl<A: Send + Sync + Clone + 'static> Listener<A> for LoopCellEntry<A> {
     fn accept(&mut self, a: A) -> ListenerResult {
         self.current = a.clone();
         self.source.accept(a)
@@ -648,13 +648,13 @@ pub struct ChannelBuffer<A> {
     keep_alive: KeepAlive<A>,
 }
 
-impl<A: Send> ChannelBuffer<A> {
+impl<A: Send + 'static> ChannelBuffer<A> {
     pub fn new(sender: Sender<A>, keep_alive: KeepAlive<A>) -> ChannelBuffer<A> {
         ChannelBuffer { sender: Mutex::new(sender), keep_alive: keep_alive }
     }
 }
 
-impl<A: Send + Sync> Listener<A> for ChannelBuffer<A> {
+impl<A: Send + Sync + 'static> Listener<A> for ChannelBuffer<A> {
     fn accept(&mut self, a: A) -> ListenerResult {
         match self.sender.lock() {
             Ok(sender) => match sender.send(a) {
