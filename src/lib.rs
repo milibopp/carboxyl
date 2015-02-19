@@ -396,17 +396,27 @@ impl<A: Send + Sync + Clone> Stream<A> {
     /// A blocking iterator over the stream.
     pub fn events(&self) -> Events<A> { Events::new(self) }
 
-    /// Accumulate events in a cell.
+    /// Scan a stream and accumulate its event firings in a cell.
     ///
     /// Starting at some initial value, each new event changes the internal
-    /// state of the resulting cell as prescribed by the supplied accumulator.
-    pub fn accumulate<B, F>(&self, initial: B, acc: F) -> Cell<B>
+    /// state of the resulting cell as prescribed by the supplied function.
+    ///
+    /// ```
+    /// # use carboxyl::Sink;
+    /// let sink = Sink::new();
+    /// let sum = sink.stream().scan(0, |a, b| a + b);
+    /// assert_eq!(sum.sample(), 0);
+    /// sink.send(2);
+    /// assert_eq!(sum.sample(), 2);
+    /// sink.send(4);
+    /// assert_eq!(sum.sample(), 6);
+    pub fn scan<B, F>(&self, initial: B, f: F) -> Cell<B>
         where B: Send + Sync + Clone,
-              F: Fn((B, A)) -> B + Send + Sync,
+              F: Fn(B, A) -> B + Send + Sync,
     {
-        let accum = CellCycle::new(initial.clone());
-        let def = accum.snapshot(self).map(acc).hold(initial);
-        accum.define(def)
+        let scan = CellCycle::new(initial.clone());
+        let def = scan.snapshot(self).map(move |(a, b)| f(a, b)).hold(initial);
+        scan.define(def)
     }
 }
 
