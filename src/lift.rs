@@ -53,19 +53,19 @@ macro_rules! lift {
 
 /// Lift a unary function.
 pub fn lift1<F, A, Ret>(f: F, ca: &Cell<A>) -> Cell<Ret>
-where F: Fn(A) -> Ret + Send + Sync,
-      A: Clone + Send + Sync,
-      Ret: Clone + Send + Sync,
+where F: Fn(A) -> Ret + Send + Sync + 'static,
+      A: Clone + Send + Sync + 'static,
+      Ret: Clone + Send + Sync + 'static,
 {
     lift2(move |a, _| f(a), ca, &Sink::new().stream().hold(()))
 }
 
 /// Lift a binary function.
 pub fn lift2<F, A, B, Ret>(f: F, ca: &Cell<A>, cb: &Cell<B>) -> Cell<Ret>
-where F: Fn(A, B) -> Ret + Send + Sync,
-      A: Send + Sync + Clone,
-      B: Send + Sync + Clone,
-      Ret: Send + Sync + Clone,
+where F: Fn(A, B) -> Ret + Send + Sync + 'static,
+      A: Send + Sync + Clone + 'static,
+      B: Send + Sync + Clone + 'static,
+      Ret: Send + Sync + Clone + 'static,
 {
     commit((f, ca, cb), |(f, ca, cb)| {
         let source = Arc::new(Mutex::new(Lift2::new(
@@ -82,11 +82,11 @@ where F: Fn(A, B) -> Ret + Send + Sync,
 /// Lift a ternary function.
 pub fn lift3<F, A, B, C, Ret>(f: F, ca: &Cell<A>, cb: &Cell<B>, cc: &Cell<C>)
     -> Cell<Ret>
-where F: Fn(A, B, C) -> Ret + Send + Sync,
-      A: Send + Sync + Clone,
-      B: Send + Sync + Clone,
-      C: Send + Sync + Clone,
-      Ret: Send + Sync + Clone,
+where F: Fn(A, B, C) -> Ret + Send + Sync + 'static,
+      A: Send + Sync + Clone + 'static,
+      B: Send + Sync + Clone + 'static,
+      C: Send + Sync + Clone + 'static,
+      Ret: Send + Sync + Clone + 'static,
 {
     lift2(move |(a, b), c| f(a, b, c), &lift2(|a, b| (a, b), ca, cb), cc)
 }
@@ -94,12 +94,12 @@ where F: Fn(A, B, C) -> Ret + Send + Sync,
 /// Lift a quarternary function.
 pub fn lift4<F, A, B, C, D, Ret>(f: F, ca: &Cell<A>, cb: &Cell<B>, cc: &Cell<C>, cd: &Cell<D>)
     -> Cell<Ret>
-where F: Fn(A, B, C, D) -> Ret + Send + Sync,
-      A: Send + Sync + Clone,
-      B: Send + Sync + Clone,
-      C: Send + Sync + Clone,
-      D: Send + Sync + Clone,
-      Ret: Send + Sync + Clone,
+where F: Fn(A, B, C, D) -> Ret + Send + Sync + 'static,
+      A: Send + Sync + Clone + 'static,
+      B: Send + Sync + Clone + 'static,
+      C: Send + Sync + Clone + 'static,
+      D: Send + Sync + Clone + 'static,
+      Ret: Send + Sync + Clone + 'static,
 {
     lift2(
         move |(a, b), (c, d)| f(a, b, c, d),
