@@ -118,7 +118,7 @@
 //! functions to the FRP primitives, as they break the benefits you get from
 //! using FRP. (Except temporary print statements for debugging.)
 
-#![feature(core, alloc, std_misc, collections)]
+#![feature(core, alloc, std_misc, io, test)]
 #![warn(missing_docs)]
 
 #[cfg(test)]
@@ -130,7 +130,7 @@ use std::ops::Deref;
 use subject::{
     Subject, Source, Mapper, WrapArc, Snapper, Merger, Filter, Holder, Updates,
     WeakSnapperWrapper, SamplingSubject, CellSwitcher, ChannelBuffer, LoopCell,
-    LoopCellEntry,
+    LoopCellEntry, Listener,
 };
 use transaction::commit;
 
@@ -558,12 +558,10 @@ impl<A: Send + Sync + Clone> Cell<Cell<A>> {
         commit((), |_| {
             // Create the cell switcher
             let mut self_source = self.source.lock().ok().expect("Cell::switch");
-            let source = Arc::new(Mutex::new(
-                CellSwitcher::new(
-                    self_source.sample(),
-                    self.source.clone(),
-                )
-            ));
+            let source = CellSwitcher::new(
+                self_source.sample(),
+                self.source.clone(),
+            );
 
             // Wire up
             self_source.listen(source.wrap_as_listener());
@@ -604,10 +602,14 @@ impl<A: Clone + Send + Sync> CellCycle<A> {
             definition.source.lock().ok()
                 .expect("Cell::cyclic (result listen #1)")
                 .listen(self.dummy.wrap_as_listener());
+            self.dummy.lock().ok()
+                .expect("Cell::cyclic (result listen #3)")
+                .accept(definition.sample_nocommit())
+                .unwrap();
             let source = Arc::new(Mutex::new(LoopCell::new(
                 definition.sample_nocommit(),
                 (
-                    self.dummy.wrap_as_sampling_subject(),
+                    self.dummy.wrap_into_sampling_subject(),
                     definition.source.clone(),
                 )
             )));
