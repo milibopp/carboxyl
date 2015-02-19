@@ -58,9 +58,9 @@
 //! # use carboxyl::Sink;
 //! # let sink = Sink::new();
 //! # let stream = sink.stream();
-//! let mut iter = stream.iter();
+//! let mut events = stream.events();
 //! sink.send(4);
-//! assert_eq!(iter.next(), Some(4));
+//! assert_eq!(events.next(), Some(4));
 //! ```
 //!
 //! Streams and cells can be combined using various primitives. We can map a
@@ -152,13 +152,13 @@ pub mod lift;
 /// let sink = Sink::new();
 ///
 /// // Make an iterator over a stream.
-/// let mut iter = sink.stream().iter();
+/// let mut events = sink.stream().events();
 ///
 /// // Send a value into the sink
 /// sink.send(5);
 ///
 /// // The stream
-/// assert_eq!(iter.next(), Some(5));
+/// assert_eq!(events.next(), Some(5));
 /// ```
 ///
 /// You can also feed a sink with an iterator:
@@ -166,9 +166,9 @@ pub mod lift;
 /// ```
 /// # use carboxyl::Sink;
 /// # let sink = Sink::new();
-/// # let mut iter = sink.stream().iter();
+/// # let mut events = sink.stream().events();
 /// sink.feed(20..40);
-/// assert_eq!(iter.take(4).collect::<Vec<_>>(), vec![20, 21, 22, 23]);
+/// assert_eq!(events.take(4).collect::<Vec<_>>(), vec![20, 21, 22, 23]);
 /// ```
 ///
 /// # Asynchronous calls
@@ -181,10 +181,10 @@ pub mod lift;
 /// ```
 /// # use carboxyl::Sink;
 /// let sink = Sink::new();
-/// let mut iter = sink.stream().iter();
+/// let mut events = sink.stream().events();
 /// sink.send_async(13);
 /// sink.send_async(22);
-/// let first = iter.next().unwrap();
+/// let first = events.next().unwrap();
 /// assert!(first == 13 || first == 22);
 /// ```
 ///
@@ -282,9 +282,9 @@ impl<A: Send + Sync + Clone> Stream<A> {
     /// ```
     /// # use carboxyl::Sink;
     /// let sink: Sink<i32> = Sink::new();
-    /// let mut iter = sink.stream().map(|x| x + 4).iter();
+    /// let mut events = sink.stream().map(|x| x + 4).events();
     /// sink.send(3);
-    /// assert_eq!(iter.next(), Some(7));
+    /// assert_eq!(events.next(), Some(7));
     /// ```
     pub fn map<B, F>(&self, f: F) -> Stream<B>
         where B: Send + Sync + Clone,
@@ -306,12 +306,12 @@ impl<A: Send + Sync + Clone> Stream<A> {
     /// ```
     /// # use carboxyl::Sink;
     /// let sink: Sink<i32> = Sink::new();
-    /// let mut iter = sink.stream()
+    /// let mut events = sink.stream()
     ///     .filter_with(|&x| (x >= 4) && (x <= 10))
-    ///     .iter();
+    ///     .events();
     /// sink.send(2); // won't arrive
     /// sink.send(5); // will arrive
-    /// assert_eq!(iter.next(), Some(5));
+    /// assert_eq!(events.next(), Some(5));
     /// ```
     pub fn filter_with<F>(&self, f: F) -> Stream<A>
         where F: Fn(&A) -> bool + Send + Sync,
@@ -328,11 +328,11 @@ impl<A: Send + Sync + Clone> Stream<A> {
     /// # use carboxyl::Sink;
     /// let sink_1 = Sink::<i32>::new();
     /// let sink_2 = Sink::<i32>::new();
-    /// let mut iter = sink_1.stream().merge(&sink_2.stream()).iter();
+    /// let mut events = sink_1.stream().merge(&sink_2.stream()).events();
     /// sink_1.send(2);
-    /// assert_eq!(iter.next(), Some(2));
+    /// assert_eq!(events.next(), Some(2));
     /// sink_2.send(4);
-    /// assert_eq!(iter.next(), Some(4));
+    /// assert_eq!(events.next(), Some(4));
     /// ```
     pub fn merge(&self, other: &Stream<A>) -> Stream<A> {
         let source = Arc::new(Mutex::new(Merger::new([
@@ -373,7 +373,7 @@ impl<A: Send + Sync + Clone> Stream<A> {
     }
 
     /// A blocking iterator over the stream.
-    pub fn iter(&self) -> StreamIter<A> { StreamIter::new(self) }
+    pub fn events(&self) -> Events<A> { Events::new(self) }
 
     /// Accumulate events in a cell.
     ///
@@ -398,12 +398,12 @@ impl<A: Send + Sync + Clone> Stream<Option<A>> {
     /// ```
     /// # use carboxyl::Sink;
     /// let sink = Sink::<i32>::new();
-    /// let mut iter = sink.stream()
+    /// let mut events = sink.stream()
     ///     .map(|x| if (x >= 4) && (x <= 10) { Some(x) } else { None })
-    ///     .filter().iter();
+    ///     .filter().events();
     /// sink.send(2); // won't arrive
     /// sink.send(5); // will arrive
-    /// assert_eq!(iter.next(), Some(5));
+    /// assert_eq!(events.next(), Some(5));
     /// ```
     pub fn filter(&self) -> Stream<A> {
         let source = Arc::new(Mutex::new(Filter::new(self.source.clone())));
@@ -451,14 +451,14 @@ impl<A: Send + Sync + Clone> Cell<A> {
     /// let sink1: Sink<i32> = Sink::new();
     /// let sink2: Sink<f64> = Sink::new();
     /// let snapshot = sink1.stream().hold(1).snapshot(&sink2.stream());
-    /// let mut iter = snapshot.iter();
+    /// let mut events = snapshot.events();
     ///
     /// // Updating its cell does not cause the snapshot to fire
     /// sink1.send(4);
     ///
     /// // However sending an event down the stream does
     /// sink2.send(3.0);
-    /// assert_eq!(iter.next(), Some((4, 3.0)));
+    /// assert_eq!(events.next(), Some((4, 3.0)));
     /// ```
     pub fn snapshot<B: Send + Sync + Clone>(&self, event: &Stream<B>) -> Stream<(A, B)> {
         commit((), |_| {
@@ -628,25 +628,25 @@ impl<A> Deref for CellCycle<A> {
 
 
 /// A blocking iterator over events in a stream.
-pub struct StreamIter<A> {
+pub struct Events<A> {
     receiver: mpsc::Receiver<A>,
     #[allow(dead_code)]
     buffer: Arc<Mutex<ChannelBuffer<A>>>,
 }
 
-impl<A: Send + Sync + Clone> StreamIter<A> {
-    fn new(event: &Stream<A>) -> StreamIter<A> {
+impl<A: Send + Sync + Clone> Events<A> {
+    fn new(event: &Stream<A>) -> Events<A> {
         let (tx, rx) = mpsc::channel();
         let chanbuf = Arc::new(Mutex::new(ChannelBuffer::new(
             tx, event.source.clone()
         )));
-        event.source.lock().ok().expect("StreamIter::new")
+        event.source.lock().ok().expect("Events::new")
             .listen(chanbuf.wrap_as_listener());
-        StreamIter { receiver: rx, buffer: chanbuf }
+        Events { receiver: rx, buffer: chanbuf }
     }
 }
 
-impl<A: Send + Sync> Iterator for StreamIter<A> {
+impl<A: Send + Sync> Iterator for Events<A> {
     type Item = A;
     fn next(&mut self) -> Option<A> { self.receiver.recv().ok() }
 }

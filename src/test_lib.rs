@@ -6,41 +6,41 @@ use super::*;
 #[test]
 fn sink() {
     let sink = Sink::new();
-    let mut iter = sink.stream().iter();
+    let mut events = sink.stream().events();
     sink.send(1);
     sink.send(2);
-    assert_eq!(iter.next(), Some(1));
-    assert_eq!(iter.next(), Some(2));
+    assert_eq!(events.next(), Some(1));
+    assert_eq!(events.next(), Some(2));
 }
 
 #[test]
 fn map() {
     let sink = Sink::new();
     let triple = sink.stream().map(|x| 3 * x);
-    let mut iter = triple.iter();
+    let mut events = triple.events();
     sink.send(1);
-    assert_eq!(iter.next(), Some(3));
+    assert_eq!(events.next(), Some(3));
 }
 
 #[test]
 fn filter() {
     let sink = Sink::new();
     let small = sink.stream().filter();
-    let mut iter = small.iter();
+    let mut events = small.events();
     sink.send(None);
     sink.send(Some(9));
-    assert_eq!(iter.next(), Some(9));
+    assert_eq!(events.next(), Some(9));
 }
 
 #[test]
 fn merge() {
     let sink1 = Sink::new();
     let sink2 = Sink::new();
-    let mut iter = sink1.stream().merge(&sink2.stream()).iter();
+    let mut events = sink1.stream().merge(&sink2.stream()).events();
     sink1.send(12);
     sink2.send(9);
-    assert_eq!(iter.next(), Some(12));
-    assert_eq!(iter.next(), Some(9));
+    assert_eq!(events.next(), Some(12));
+    assert_eq!(events.next(), Some(9));
 }
 
 #[test]
@@ -56,35 +56,35 @@ fn hold() {
 fn chain_1() {
     let sink: Sink<i32> = Sink::new();
     let chain = sink.stream().map(|x| x / 2).filter_with(|&x| x < 3);
-    let mut iter = chain.iter();
+    let mut events = chain.events();
     sink.send(7);
     sink.send(4);
-    assert_eq!(iter.next(), Some(2));
+    assert_eq!(events.next(), Some(2));
 }
 
 #[test]
 fn chain_2() {
     let sink1: Sink<i32> = Sink::new();
     let sink2: Sink<i32> = Sink::new();
-    let mut iter = sink1.stream().map(|x| x + 4)
+    let mut events = sink1.stream().map(|x| x + 4)
         .merge(
             &sink2.stream()
             .map(|x| if x < 4 { Some(x) } else { None })
             .filter().map(|x| x * 5))
-        .iter();
+        .events();
     sink1.send(12);
     sink2.send(3);
-    assert_eq!(iter.next(), Some(16));
-    assert_eq!(iter.next(), Some(15));
+    assert_eq!(events.next(), Some(16));
+    assert_eq!(events.next(), Some(15));
 }
 
 #[test]
 fn snapshot() {
     let sink1: Sink<i32> = Sink::new();
     let sink2: Sink<f64> = Sink::new();
-    let mut snap_iter = sink1.stream().hold(1).snapshot(&sink2.stream().map(|x| x + 3.0)).iter();
+    let mut snap_events = sink1.stream().hold(1).snapshot(&sink2.stream().map(|x| x + 3.0)).events();
     sink2.send(4.0);
-    assert_eq!(snap_iter.next(), Some((1, 7.0)));
+    assert_eq!(snap_events.next(), Some((1, 7.0)));
 }
 
 #[test]
@@ -93,22 +93,22 @@ fn snapshot_2() {
     let beh1 = ev1.stream().hold(5);
     let ev2 = Sink::new();
     let snap = beh1.snapshot(&ev2.stream());
-    let mut iter = snap.iter();
+    let mut events = snap.events();
     ev2.send(4);
-    assert_eq!(iter.next(), Some((5, 4)));
+    assert_eq!(events.next(), Some((5, 4)));
     ev1.send(-2);
     ev2.send(6);
-    assert_eq!(iter.next(), Some((-2, 6)));
+    assert_eq!(events.next(), Some((-2, 6)));
 }
 
 #[test]
 fn updates() {
     let sink = Sink::new();
-    let mut iter = sink.stream().hold(0).updates().iter();
+    let mut events = sink.stream().hold(0).updates().events();
     sink.send(4);
-    assert_eq!(iter.next(), Some(4));
+    assert_eq!(events.next(), Some(4));
     sink.send(-14);
-    assert_eq!(iter.next(), Some(-14));
+    assert_eq!(events.next(), Some(-14));
 }
 
 #[test]
@@ -162,17 +162,17 @@ fn move_closure() {
 #[test]
 fn sink_send_async() {
     let sink = Sink::new();
-    let mut iter = sink.stream().iter();
+    let mut events = sink.stream().events();
     sink.send_async(1);
-    assert_eq!(iter.next(), Some(1));
+    assert_eq!(events.next(), Some(1));
 }
 
 #[test]
 fn sink_feed() {
     let sink = Sink::new();
-    let iter = sink.stream().iter();
+    let events = sink.stream().events();
     sink.feed(0..10);
-    for (n, m) in iter.take(10).enumerate() {
+    for (n, m) in events.take(10).enumerate() {
         assert_eq!(n as i32, m);
     }
 }
@@ -180,9 +180,9 @@ fn sink_feed() {
 #[test]
 fn sink_feed_async() {
     let sink = Sink::new();
-    let iter = sink.stream().iter();
+    let events = sink.stream().events();
     sink.feed_async(0..10);
-    for (n, m) in iter.take(10).enumerate() {
+    for (n, m) in events.take(10).enumerate() {
         assert_eq!(n as i32, m);
     }
 }
@@ -202,9 +202,9 @@ fn bench_chain(b: &mut Bencher) {
 fn snapshot_order_standard() {
     let sink = Sink::new();
     let cell = sink.stream().hold(0);
-    let mut iter = cell.snapshot(&sink.stream()).iter();
+    let mut events = cell.snapshot(&sink.stream()).events();
     sink.send(1);
-    assert_eq!(iter.next(), Some((0, 1)));
+    assert_eq!(events.next(), Some((0, 1)));
 }
 
 #[test]
@@ -214,9 +214,9 @@ fn snapshot_order_alternative() {
     // the cell, which are both used by the snapshot.
     let first = sink.stream().map(|x| x);
     let cell = sink.stream().hold(0);
-    let mut iter = cell.snapshot(&first).iter();
+    let mut events = cell.snapshot(&first).events();
     sink.send(1);
-    assert_eq!(iter.next(), Some((0, 1)));
+    assert_eq!(events.next(), Some((0, 1)));
 }
 
 #[test]
