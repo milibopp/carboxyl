@@ -82,7 +82,7 @@
 //! # use carboxyl::Sink;
 //! # let sink: Sink<i32> = Sink::new();
 //! # let stream = sink.stream();
-//! let negatives = stream.filter_with(|&x| x < 0).hold(0);
+//! let negatives = stream.filter(|&x| x < 0).hold(0);
 //!
 //! // This won't arrive at the cell.
 //! sink.send(4);
@@ -300,23 +300,44 @@ impl<A: Send + Sync + Clone> Stream<A> {
 
     /// Filter a stream according to a predicate.
     ///
-    /// `filter` creates a new stream that only fires the unwrapped `Some(…)`
-    /// events from the original stream omitting any `None` events.
+    /// `filter` creates a new stream that only fires those events from the
+    /// original stream that satisfy the predicate.
     ///
     /// ```
     /// # use carboxyl::Sink;
     /// let sink: Sink<i32> = Sink::new();
     /// let mut events = sink.stream()
-    ///     .filter_with(|&x| (x >= 4) && (x <= 10))
+    ///     .filter(|&x| (x >= 4) && (x <= 10))
     ///     .events();
     /// sink.send(2); // won't arrive
     /// sink.send(5); // will arrive
     /// assert_eq!(events.next(), Some(5));
     /// ```
-    pub fn filter_with<F>(&self, f: F) -> Stream<A>
+    pub fn filter<F>(&self, f: F) -> Stream<A>
         where F: Fn(&A) -> bool + Send + Sync,
     {
-        self.map(move |a| if f(&a) { Some(a) } else { None }).filter()
+        self.filter_map(move |a| if f(&a) { Some(a) } else { None })
+    }
+
+    /// Both filter and map a stream.
+    ///
+    /// This is equivalent to `.map(f).filter_just()`.
+    ///
+    /// ```
+    /// # use carboxyl::Sink;
+    /// let sink = Sink::new();
+    /// let mut events = sink.stream()
+    ///     .filter_map(|i| if i > 3 { Some(i + 2) } else { None })
+    ///     .events();
+    /// sink.send(2);
+    /// sink.send(4);
+    /// assert_eq!(events.next(), Some(6));
+    /// ```
+    pub fn filter_map<B, F>(&self, f: F) -> Stream<B>
+        where B: Send + Sync + Clone,
+              F: Fn(A) -> Option<B> + Send + Sync,
+    {
+        self.map(f).filter_just()
     }
 
     /// Merge with another stream.
@@ -392,20 +413,18 @@ impl<A: Send + Sync + Clone> Stream<A> {
 impl<A: Send + Sync + Clone> Stream<Option<A>> {
     /// Filter a stream of options.
     ///
-    /// `filter` creates a new stream that only fires the unwrapped `Some(…)`
-    /// events from the original stream omitting any `None` events.
+    /// `filter_just` creates a new stream that only fires the unwrapped
+    /// `Some(…)` events from the original stream omitting any `None` events.
     ///
     /// ```
     /// # use carboxyl::Sink;
-    /// let sink = Sink::<i32>::new();
-    /// let mut events = sink.stream()
-    ///     .map(|x| if (x >= 4) && (x <= 10) { Some(x) } else { None })
-    ///     .filter().events();
-    /// sink.send(2); // won't arrive
-    /// sink.send(5); // will arrive
+    /// let sink = Sink::new();
+    /// let mut events = sink.stream().filter_just().events();
+    /// sink.send(None); // won't arrive
+    /// sink.send(Some(5)); // will arrive
     /// assert_eq!(events.next(), Some(5));
     /// ```
-    pub fn filter(&self) -> Stream<A> {
+    pub fn filter_just(&self) -> Stream<A> {
         let source = Arc::new(Mutex::new(Filter::new(self.source.clone())));
         commit((), |_| {
             self.source.lock().ok().expect("Stream::filter")

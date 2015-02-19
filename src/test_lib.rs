@@ -25,7 +25,7 @@ fn map() {
 #[test]
 fn filter() {
     let sink = Sink::new();
-    let small = sink.stream().filter();
+    let small = sink.stream().filter_just();
     let mut events = small.events();
     sink.send(None);
     sink.send(Some(9));
@@ -55,7 +55,7 @@ fn hold() {
 #[test]
 fn chain_1() {
     let sink: Sink<i32> = Sink::new();
-    let chain = sink.stream().map(|x| x / 2).filter_with(|&x| x < 3);
+    let chain = sink.stream().map(|x| x / 2).filter(|&x| x < 3);
     let mut events = chain.events();
     sink.send(7);
     sink.send(4);
@@ -69,8 +69,8 @@ fn chain_2() {
     let mut events = sink1.stream().map(|x| x + 4)
         .merge(
             &sink2.stream()
-            .map(|x| if x < 4 { Some(x) } else { None })
-            .filter().map(|x| x * 5))
+            .filter_map(|x| if x < 4 { Some(x) } else { None })
+            .map(|x| x * 5))
         .events();
     sink1.send(12);
     sink2.send(3);
@@ -192,7 +192,7 @@ fn bench_chain(b: &mut Bencher) {
     let sink: Sink<i32> = Sink::new();
     let _ = sink.stream()
         .map(|x| x + 4)
-        .filter_with(|&x| x < 4)
+        .filter(|&x| x < 4)
         .merge(&sink.stream().map(|x| x * 5))
         .hold(15);
     b.iter(|| sink.send(-5));
@@ -265,7 +265,7 @@ fn drag_drop_example() {
         })
         .hold(vec![300]);
 
-    let new_rects = events.map({
+    let new_rects = events.filter_map({
         let spawned = spawned.clone();
         move |ev| match ev {
             Event::Drag(idx, pos) => {
@@ -279,7 +279,6 @@ fn drag_drop_example() {
             Event::Drop => Some(spawned.clone()),
             _ => None,
         }})
-        .filter()
         .hold(spawned.clone())
         .switch();
     let rects = rects.define(new_rects.clone());
