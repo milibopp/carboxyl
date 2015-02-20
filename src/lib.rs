@@ -118,14 +118,14 @@
 //! functions to the FRP primitives, as they break the benefits you get from
 //! using FRP. (Except temporary print statements for debugging.)
 
-#![feature(core, alloc, std_misc, io, test)]
+#![feature(core, alloc, std_misc, old_io, test)]
 #![warn(missing_docs)]
 
 #[cfg(test)]
 extern crate test;
 
 use std::sync::{Arc, Mutex, mpsc};
-use std::thread::Thread;
+use std::thread;
 use std::ops::Deref;
 use subject::{
     Subject, Source, Mapper, WrapArc, Snapper, Merger, Filter, Holder, Updates,
@@ -225,7 +225,7 @@ impl<A: Send + Sync + Clone + 'static> Sink<A> {
     /// dependent streams and cells.
     pub fn send_async(&self, a: A) {
         let clone = self.clone();
-        Thread::spawn(move || clone.send(a));
+        thread::spawn(move || clone.send(a));
     }
 
     /// Feed values from an iterator into the sink.
@@ -244,7 +244,7 @@ impl<A: Send + Sync + Clone + 'static> Sink<A> {
     /// or even infinite (e.g. an I/O event loop).
     pub fn feed_async<I: Iterator<Item=A> + Send + 'static>(&self, iterator: I) {
         let clone = self.clone();
-        Thread::spawn(move || clone.feed(iterator));
+        thread::spawn(move || clone.feed(iterator));
     }
 
     /// Generate a stream that fires all events sent into the sink.
