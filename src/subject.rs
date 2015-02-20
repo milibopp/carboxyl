@@ -383,20 +383,19 @@ impl<A: Send + Sync + 'static> Subject<A> for Merger<A> {
 pub struct CellSwitcher<A> {
     current: Cell<A>,
     source: Source<A>,
-    cell_listener: Arc<Mutex<WeakSwitcherWrapper<A>>>,
-    weak_self: Weak<Mutex<CellSwitcher<A>>>,
+    cell_listener: Option<Arc<Mutex<WeakSwitcherWrapper<A>>>>,
+    weak_self: Option<Weak<Mutex<CellSwitcher<A>>>>,
     #[allow(dead_code)]
     keep_alive: KeepAliveSample<Cell<A>>,
 }
 
 impl<A: Send + Sync + Clone + 'static> CellSwitcher<A> {
     pub fn new(initial: Cell<A>, keep_alive: KeepAliveSample<Cell<A>>) -> Arc<Mutex<CellSwitcher<A>>> {
-        use std::mem;
         let switcher = Arc::new(Mutex::new(CellSwitcher {
             current: initial.clone(),
             source: Source::new(),
-            cell_listener: unsafe { mem::uninitialized() },
-            weak_self: unsafe { mem::uninitialized() },
+            cell_listener: None,
+            weak_self: None,
             keep_alive: keep_alive,
         }));
         let wrapper = Arc::new(Mutex::new(WeakSwitcherWrapper::new(switcher.downgrade())));
@@ -405,8 +404,8 @@ impl<A: Send + Sync + Clone + 'static> CellSwitcher<A> {
             .listen(wrapper.wrap_as_listener());
         {
             let mut lock = switcher.lock().unwrap();
-            lock.cell_listener = wrapper;
-            lock.weak_self = switcher.downgrade();
+            lock.cell_listener = Some(wrapper);
+            lock.weak_self = Some(switcher.downgrade());
         }
         switcher
     }
@@ -414,11 +413,11 @@ impl<A: Send + Sync + Clone + 'static> CellSwitcher<A> {
 
 impl<A: Send + Sync + Clone + 'static> Listener<Cell<A>> for CellSwitcher<A> {
     fn accept(&mut self, cell: Cell<A>) -> ListenerResult {
-        let wrapper = Arc::new(Mutex::new(WeakSwitcherWrapper::new(self.weak_self.clone())));
+        let wrapper = Arc::new(Mutex::new(WeakSwitcherWrapper::new(self.weak_self.as_ref().unwrap().clone())));
         cell.source.lock().ok()
             .expect("CellSwitcher::accept")
             .listen(wrapper.wrap_as_listener());
-        self.cell_listener = wrapper;
+        self.cell_listener = Some(wrapper);
         self.current = cell;
         self.source.accept(self.current.sample_nocommit())
     }
