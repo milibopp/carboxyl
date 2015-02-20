@@ -118,14 +118,14 @@
 //! functions to the FRP primitives, as they break the benefits you get from
 //! using FRP. (Except temporary print statements for debugging.)
 
-#![feature(core, alloc, std_misc, io, test)]
+#![feature(core, alloc, std_misc, old_io, test)]
 #![warn(missing_docs)]
 
 #[cfg(test)]
 extern crate test;
 
 use std::sync::{Arc, Mutex, mpsc};
-use std::thread::Thread;
+use std::thread;
 use std::ops::Deref;
 use subject::{
     Subject, Source, Mapper, WrapArc, Snapper, Merger, Filter, Holder, Updates,
@@ -201,7 +201,7 @@ impl<A> Clone for Sink<A> {
     }
 }
 
-impl<A: Send + Sync + Clone> Sink<A> {
+impl<A: Send + Sync + Clone + 'static> Sink<A> {
     /// Create a new sink.
     pub fn new() -> Sink<A> {
         Sink { source: Arc::new(Mutex::new(Source::new())) }
@@ -225,7 +225,7 @@ impl<A: Send + Sync + Clone> Sink<A> {
     /// dependent streams and cells.
     pub fn send_async(&self, a: A) {
         let clone = self.clone();
-        Thread::spawn(move || clone.send(a));
+        thread::spawn(move || clone.send(a));
     }
 
     /// Feed values from an iterator into the sink.
@@ -242,9 +242,9 @@ impl<A: Send + Sync + Clone> Sink<A> {
     /// This is the same as `feed`, but it does not block, since it spawns the
     /// feeding as a new task. This is useful, if the provided iterator is large
     /// or even infinite (e.g. an I/O event loop).
-    pub fn feed_async<I: Iterator<Item=A> + Send>(&self, iterator: I) {
+    pub fn feed_async<I: Iterator<Item=A> + Send + 'static>(&self, iterator: I) {
         let clone = self.clone();
-        Thread::spawn(move || clone.feed(iterator));
+        thread::spawn(move || clone.feed(iterator));
     }
 
     /// Generate a stream that fires all events sent into the sink.
@@ -267,7 +267,7 @@ impl<A> Clone for Stream<A> {
     }    
 }
 
-impl<A: Send + Sync + Clone> Stream<A> {
+impl<A: Send + Sync + Clone + 'static> Stream<A> {
     /// A stream that never fires. This can be useful in certain situations,
     /// where a stream is logically required, but no events are expected.
     pub fn never() -> Stream<A> {
@@ -287,8 +287,8 @@ impl<A: Send + Sync + Clone> Stream<A> {
     /// assert_eq!(events.next(), Some(7));
     /// ```
     pub fn map<B, F>(&self, f: F) -> Stream<B>
-        where B: Send + Sync + Clone,
-              F: Fn(A) -> B + Send + Sync,
+        where B: Send + Sync + Clone + 'static,
+              F: Fn(A) -> B + Send + Sync + 'static,
     {
         let source = Arc::new(Mutex::new(Mapper::new(f, self.source.clone())));
         commit((), |_| {
@@ -314,7 +314,7 @@ impl<A: Send + Sync + Clone> Stream<A> {
     /// assert_eq!(events.next(), Some(5));
     /// ```
     pub fn filter<F>(&self, f: F) -> Stream<A>
-        where F: Fn(&A) -> bool + Send + Sync,
+        where F: Fn(&A) -> bool + Send + Sync + 'static,
     {
         self.filter_map(move |a| if f(&a) { Some(a) } else { None })
     }
@@ -334,8 +334,8 @@ impl<A: Send + Sync + Clone> Stream<A> {
     /// assert_eq!(events.next(), Some(6));
     /// ```
     pub fn filter_map<B, F>(&self, f: F) -> Stream<B>
-        where B: Send + Sync + Clone,
-              F: Fn(A) -> Option<B> + Send + Sync,
+        where B: Send + Sync + Clone + 'static,
+              F: Fn(A) -> Option<B> + Send + Sync + 'static,
     {
         self.map(f).filter_just()
     }
@@ -411,8 +411,8 @@ impl<A: Send + Sync + Clone> Stream<A> {
     /// sink.send(4);
     /// assert_eq!(sum.sample(), 6);
     pub fn scan<B, F>(&self, initial: B, f: F) -> Cell<B>
-        where B: Send + Sync + Clone,
-              F: Fn(B, A) -> B + Send + Sync,
+        where B: Send + Sync + Clone + 'static,
+              F: Fn(B, A) -> B + Send + Sync + 'static,
     {
         let scan = CellCycle::new(initial.clone());
         let def = scan.snapshot(self).map(move |(a, b)| f(a, b)).hold(initial);
@@ -420,7 +420,7 @@ impl<A: Send + Sync + Clone> Stream<A> {
     }
 }
 
-impl<A: Send + Sync + Clone> Stream<Option<A>> {
+impl<A: Send + Sync + Clone + 'static> Stream<Option<A>> {
     /// Filter a stream of options.
     ///
     /// `filter_just` creates a new stream that only fires the unwrapped
@@ -456,7 +456,7 @@ impl<A> Clone for Cell<A> {
     }
 }
 
-impl<A: Send + Sync + Clone> Cell<A> {
+impl<A: Send + Sync + Clone + 'static> Cell<A> {
     /// Sample the current value of the cell.
     ///
     /// `sample` provides access to the underlying data of a cell.
@@ -489,7 +489,7 @@ impl<A: Send + Sync + Clone> Cell<A> {
     /// sink2.send(3.0);
     /// assert_eq!(events.next(), Some((4, 3.0)));
     /// ```
-    pub fn snapshot<B: Send + Sync + Clone>(&self, event: &Stream<B>) -> Stream<(A, B)> {
+    pub fn snapshot<B: Send + Sync + Clone + 'static>(&self, event: &Stream<B>) -> Stream<(A, B)> {
         commit((), |_| {
             let source = Arc::new(Mutex::new(Snapper::new(
                 self.sample_nocommit(), (self.source.clone(), event.source.clone())
@@ -514,7 +514,7 @@ impl<A: Send + Sync + Clone> Cell<A> {
 
 }
 
-impl<A: Send + Sync + Clone> Cell<Cell<A>> {
+impl<A: Send + Sync + Clone + 'static> Cell<Cell<A>> {
     /// Switch between cells.
     ///
     /// This transforms a `Cell<Cell<A>>` into a `Cell<A>`. The nested cell can
@@ -611,7 +611,7 @@ pub struct CellCycle<A> {
     cell: Cell<A>,
 }
 
-impl<A: Clone + Send + Sync> CellCycle<A> {
+impl<A: Clone + Send + Sync + 'static> CellCycle<A> {
     /// Predeclare a cell
     ///
     /// FIXME: the `initial` parameter is unfortunately necessary due to a lack
@@ -663,7 +663,7 @@ pub struct Events<A> {
     buffer: Arc<Mutex<ChannelBuffer<A>>>,
 }
 
-impl<A: Send + Sync + Clone> Events<A> {
+impl<A: Send + Sync + Clone + 'static> Events<A> {
     fn new(event: &Stream<A>) -> Events<A> {
         let (tx, rx) = mpsc::channel();
         let chanbuf = Arc::new(Mutex::new(ChannelBuffer::new(
@@ -675,7 +675,7 @@ impl<A: Send + Sync + Clone> Events<A> {
     }
 }
 
-impl<A: Send + Sync> Iterator for Events<A> {
+impl<A: Send + Sync + 'static> Iterator for Events<A> {
     type Item = A;
     fn next(&mut self) -> Option<A> { self.receiver.recv().ok() }
 }
