@@ -106,7 +106,7 @@ mod test {
     #[test]
     fn commits_parallel() {
         use std::sync::{Arc, Mutex};
-        use std::thread::Thread;
+        use std::thread;
         use std::old_io::timer::sleep;
         use std::time::duration::Duration;
 
@@ -116,7 +116,7 @@ mod test {
         let guards: Vec<_> = (0..3)
             .map(|_| {
                 let v = v.clone();
-                Thread::scoped(move || commit((), move |_| {
+                thread::spawn(move || commit((), move |_| {
                     // Acquire locks independently, s.t. commit atomicity does
                     // not rely on the local locks here
                     *v.lock().unwrap() *= 2;
