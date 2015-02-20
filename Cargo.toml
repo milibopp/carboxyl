@@ -9,3 +9,6 @@ repository = "https://github.com/aepsil0n/carboxyl"
 readme = "README.md"
 keywords = ["frp", "reactive", "event", "concurrency"]
 license = "LGPL-3.0+"
+
+[dev-dependencies]
+rand = "0.1"
