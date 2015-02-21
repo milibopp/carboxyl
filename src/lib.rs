@@ -118,7 +118,7 @@
 //! functions to the FRP primitives, as they break the benefits you get from
 //! using FRP. (Except temporary print statements for debugging.)
 
-#![feature(core, alloc, std_misc, old_io, test)]
+#![feature(alloc, std_misc, old_io, test)]
 #![warn(missing_docs)]
 
 #[cfg(test)]
