@@ -52,7 +52,7 @@ Or we can filter a stream to create a new one that only contains events that
 satisfy a certain predicate:
 
 ```rust
-let negatives = stream.filter_with(|&x| x < 0).hold(0);
+let negatives = stream.filter(|&x| x < 0).hold(0);
 
 // This won't arrive at the cell.
 sink.send(4);
@@ -67,7 +67,7 @@ There are a couple of other primitives to compose streams and cells:
 
 - `merge` two streams of events of the same type.
 - Make a `snapshot` of a cell, whenever a stream fires an event.
-- `lift` an ordinary function to a function on cells.
+- `lift!` an ordinary function to a function on cells.
 - `switch` between different cells using a cell containing a cell.
 
 See the [documentation](http://www.rust-ci.org/aepsil0n/carboxyl/doc/carboxyl/)
