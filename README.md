@@ -34,9 +34,9 @@ One can also directly iterate over the stream instead of holding it in a
 cell:
 
 ```rust
-let mut iter = stream.iter();
+let mut events = stream.events();
 sink.send(4);
-assert_eq!(iter.next(), Some(4));
+assert_eq!(events.next(), Some(4));
 ```
 
 Streams and cells can be combined using various primitives. We can map a stream
