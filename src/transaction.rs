@@ -107,7 +107,6 @@ mod test {
     fn commits_parallel() {
         use std::sync::{Arc, Mutex};
         use std::thread;
-        use std::old_io::timer::sleep;
         use std::time::duration::Duration;
 
         // Set up a ref-counted value
@@ -121,7 +120,7 @@ mod test {
                     // not rely on the local locks here
                     *v.lock().unwrap() *= 2;
                     // …and sleep for a bit
-                    sleep(Duration::milliseconds(1));
+                    thread::sleep(Duration::milliseconds(1));
                     *v.lock().unwrap() -= 1;
                 }))
             })
