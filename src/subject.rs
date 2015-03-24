@@ -47,8 +47,8 @@ impl<A, L> Listener<A> for WeakListenerWrapper<L>
 }
 
 
-type KeepAlive<A> = Arc<Mutex<Box<Subject<A> + 'static>>>;
-type KeepAliveSample<A> = Arc<Mutex<Box<SamplingSubject<A> + 'static>>>;
+pub type KeepAlive<A> = Arc<Mutex<Box<Subject<A> + 'static>>>;
+pub type KeepAliveSample<A> = Arc<Mutex<Box<SamplingSubject<A> + 'static>>>;
 
 
 pub struct StrongSubjectWrapper<S> {
