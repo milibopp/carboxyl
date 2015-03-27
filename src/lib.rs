@@ -607,7 +607,7 @@ impl<A: Send + Sync + Clone + 'static> Cell<Cell<A>> {
 ///
 /// This pattern is useful to implement accumulators, counters and other
 /// loops that depend on the state of a cell before a transaction.
-pub struct CellCycle<A> {
+pub struct CellCycle<A: Send> {
     dummy: Arc<Mutex<LoopCellEntry<A>>>,
     cell: Cell<A>,
 }
@@ -651,14 +651,14 @@ impl<A: Clone + Send + Sync + 'static> CellCycle<A> {
     }
 }
 
-impl<A> Deref for CellCycle<A> {
+impl<A: Send> Deref for CellCycle<A> {
     type Target = Cell<A>;
     fn deref(&self) -> &Cell<A> { &self.cell }
 }
 
 
 /// A blocking iterator over events in a stream.
-pub struct Events<A> {
+pub struct Events<A: Send> {
     receiver: mpsc::Receiver<A>,
     #[allow(dead_code)]
     buffer: Arc<Mutex<ChannelBuffer<A>>>,
