@@ -20,11 +20,11 @@ pub trait Listener<A>: Send + Sync + 'static {
     fn accept(&mut self, a: A) -> ListenerResult;
 }
 
-pub struct WeakListenerWrapper<L> {
+pub struct WeakListenerWrapper<L: Send> {
     weak: Weak<Mutex<L>>
 }
 
-impl<L> WeakListenerWrapper<L> {
+impl<L: Send> WeakListenerWrapper<L> {
     pub fn boxed<A>(strong: &Arc<Mutex<L>>) -> Box<Listener<A> + 'static>
         where L: Listener<A>, A: Send + Sync + 'static,
     {
@@ -51,7 +51,7 @@ pub type KeepAlive<A> = Arc<Mutex<Box<Subject<A> + 'static>>>;
 pub type KeepAliveSample<A> = Arc<Mutex<Box<SamplingSubject<A> + 'static>>>;
 
 
-pub struct StrongSubjectWrapper<S> {
+pub struct StrongSubjectWrapper<S: Send> {
     #[allow(dead_code)]
     arc: Arc<Mutex<S>>
 }
@@ -325,7 +325,7 @@ impl<A: Send + Sync + 'static, B: Send + Sync + 'static> Subject<(A, B)> for Sna
 }
 
 
-pub struct WeakSnapperWrapper<A, B> {
+pub struct WeakSnapperWrapper<A: Send, B: Send> {
     weak: Weak<Mutex<Snapper<A, B>>>,
 }
 
@@ -520,7 +520,7 @@ impl<A, B, C, F> Sample<C> for Lift2<A, B, C, F>
 }
 
 
-pub struct WeakLift2Wrapper<A, B, C, F> {
+pub struct WeakLift2Wrapper<A: Send, B: Send, C: Send, F: Send> {
     weak: Weak<Mutex<Lift2<A, B, C, F>>>,
 }
 
@@ -605,12 +605,12 @@ impl<A: Clone> Sample<A> for LoopCell<A> {
 /// Entry into a cell loop.
 ///
 /// This feeds the cell loop with data it has produced itself.
-pub struct LoopCellEntry<A> {
+pub struct LoopCellEntry<A: Send> {
     current: A,
     source: Source<A>,
 }
 
-impl<A> LoopCellEntry<A> {
+impl<A: Send> LoopCellEntry<A> {
     /// Create a new looping
     pub fn new(initial: A) -> LoopCellEntry<A>
     {
@@ -634,14 +634,14 @@ impl<A: Send + Sync + Clone + 'static> Listener<A> for LoopCellEntry<A> {
     }
 }
 
-impl<A: Clone> Sample<A> for LoopCellEntry<A> {
+impl<A: Send + Clone> Sample<A> for LoopCellEntry<A> {
     fn sample(&self) -> A {
         self.current.clone()
     }
 }
 
 
-pub struct ChannelBuffer<A> {
+pub struct ChannelBuffer<A: Send> {
     sender: Mutex<Sender<A>>,
     #[allow(dead_code)]
     keep_alive: KeepAlive<A>,
