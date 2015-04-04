@@ -119,7 +119,7 @@
 //! using FRP. (Except temporary print statements for debugging.)
 
 #![feature(alloc, std_misc)]
-#![cfg_attr(test, feature(test, thread_sleep))]
+#![cfg_attr(test, feature(test))]
 #![warn(missing_docs)]
 
 #[cfg(test)]
