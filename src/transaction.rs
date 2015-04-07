@@ -3,13 +3,17 @@
 //! At the moment, this is really just a global static mutex, that needs to be
 //! locked, to ensure the atomicity of a transaction.
 
-use std::sync::{StaticMutex, MUTEX_INIT};
+use std::sync::Mutex;
 use std::cell::RefCell;
 
 
 /// The global transaction lock.
-static TRANSACTION_MUTEX: StaticMutex = MUTEX_INIT;
-
+///
+/// TODO: revert this to use a static mutex, as soon as that is stabilized in
+/// the standard library.
+lazy_static! {
+    static ref TRANSACTION_MUTEX: Mutex<()> = Mutex::new(());
+}
 
 /// Registry for callbacks to be executed at the end of a transaction.
 thread_local!(
@@ -56,7 +60,8 @@ pub fn commit<A, B, F: FnOnce(A) -> B>(args: A, transaction: F) -> B {
     // Acquire global lock if necessary
     let _lock = match prev {
         None => Some(TRANSACTION_MUTEX.lock().ok()
-                    .expect("global transaction mutex poisoned")),
+                .expect("global transaction mutex poisoned")
+        ),
         Some(_) => None,
     };
     // Perform the transaction
