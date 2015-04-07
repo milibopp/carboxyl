@@ -10,5 +10,8 @@ readme = "README.md"
 keywords = ["frp", "reactive", "event", "concurrency"]
 license = "LGPL-3.0+"
 
+[dependencies]
+lazy_static = "0.1.10"
+
 [dev-dependencies]
 rand = "*"
