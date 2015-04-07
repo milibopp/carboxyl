@@ -118,12 +118,14 @@
 //! functions to the FRP primitives, as they break the benefits you get from
 //! using FRP. (Except temporary print statements for debugging.)
 
-#![feature(alloc, std_misc)]
+#![feature(alloc)]
 #![cfg_attr(test, feature(test))]
 #![warn(missing_docs)]
 
 #[cfg(test)]
 extern crate test;
+#[macro_use(lazy_static)]
+extern crate lazy_static;
 
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
