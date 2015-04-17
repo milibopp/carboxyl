@@ -1,10 +1,10 @@
+[![Build Status](https://img.shields.io/travis/aepsil0n/carboxyl.svg)](https://travis-ci.org/aepsil0n/carboxyl)
+[![](https://img.shields.io/crates/v/carboxyl.svg)](https://crates.io/crates/carboxyl)
+
 *Carboxyl* is a library for functional reactive programming in Rust, a
 functional and composable approach to handle events in interactive
 applications.
-
-- [Crate](https://crates.io/crates/carboxyl)
-- [Documentation](http://www.rust-ci.org/aepsil0n/carboxyl/doc/carboxyl/)
-- Travis CI: [![Build Status](https://travis-ci.org/aepsil0n/carboxyl.svg?branch=master)](https://travis-ci.org/aepsil0n/carboxyl)
+[To the docs…](http://www.rust-ci.org/aepsil0n/carboxyl/doc/carboxyl/)
 
 
 ## Usage example
