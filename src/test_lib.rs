@@ -25,7 +25,7 @@ fn map() {
 #[test]
 fn filter() {
     let sink = Sink::new();
-    let small = sink.stream().filter_just();
+    let small = sink.stream().filter_some();
     let mut events = small.events();
     sink.send(None);
     sink.send(Some(9));
