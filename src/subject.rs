@@ -2,7 +2,8 @@
 
 #![allow(missing_docs)]
 
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::Mutex;
+use arc::{ Arc, Weak };
 use std::sync::mpsc::Sender;
 use Cell;
 use transaction::register_callback;

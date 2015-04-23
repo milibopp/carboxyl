@@ -30,7 +30,8 @@
 //! # }
 //! ```
 
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
+use arc::Arc;
 use subject::{Lift2, WeakLift2Wrapper, WrapArc};
 use transaction::commit;
 use {Sink, Cell};
