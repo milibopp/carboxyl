@@ -324,7 +324,7 @@ impl<A: Send + Sync + Clone + 'static> Stream<A> {
 
     /// Both filter and map a stream.
     ///
-    /// This is equivalent to `.map(f).filter_just()`.
+    /// This is equivalent to `.map(f).filter_some()`.
     ///
     /// ```
     /// # use carboxyl::Sink;
@@ -340,7 +340,7 @@ impl<A: Send + Sync + Clone + 'static> Stream<A> {
         where B: Send + Sync + Clone + 'static,
               F: Fn(A) -> Option<B> + Send + Sync + 'static,
     {
-        self.map(f).filter_just()
+        self.map(f).filter_some()
     }
 
     /// Merge with another stream.
@@ -426,18 +426,18 @@ impl<A: Send + Sync + Clone + 'static> Stream<A> {
 impl<A: Send + Sync + Clone + 'static> Stream<Option<A>> {
     /// Filter a stream of options.
     ///
-    /// `filter_just` creates a new stream that only fires the unwrapped
+    /// `filter_some` creates a new stream that only fires the unwrapped
     /// `Some(…)` events from the original stream omitting any `None` events.
     ///
     /// ```
     /// # use carboxyl::Sink;
     /// let sink = Sink::new();
-    /// let mut events = sink.stream().filter_just().events();
+    /// let mut events = sink.stream().filter_some().events();
     /// sink.send(None); // won't arrive
     /// sink.send(Some(5)); // will arrive
     /// assert_eq!(events.next(), Some(5));
     /// ```
-    pub fn filter_just(&self) -> Stream<A> {
+    pub fn filter_some(&self) -> Stream<A> {
         let source = Arc::new(Mutex::new(Filter::new(self.source.clone())));
         commit((), |_| {
             self.source.lock().ok().expect("Stream::filter")
