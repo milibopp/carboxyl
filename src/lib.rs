@@ -139,6 +139,7 @@ use transaction::commit;
 
 mod transaction;
 mod subject;
+mod source;
 #[macro_use]
 pub mod lift;
 
