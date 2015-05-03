@@ -140,6 +140,7 @@ use transaction::commit;
 mod transaction;
 mod subject;
 mod source;
+pub mod stream;
 #[macro_use]
 pub mod lift;
 
