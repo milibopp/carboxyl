@@ -66,14 +66,22 @@ impl<A> Clone for Signal<A> {
     }
 }
 
+impl<A> Signal<A> {
+    fn build<K>(func: SignalFn<A>, keep_alive: K) -> Signal<A>
+        where K: Send + Sync + Clone + 'static
+    {
+        Signal {
+            current: Arc::new(Mutex::new(Pending::new(func))),
+            source: Arc::new(Mutex::new(Source::new())),
+            keep_alive: Box::new(keep_alive),
+        }
+    }
+}
+
 impl<A: Clone> Signal<A> {
     /// Create a constant signal.
     pub fn new(a: A) -> Signal<A> {
-        Signal {
-            current: Arc::new(Mutex::new(Pending::new(SignalFn::Const(a)))),
-            source: Arc::new(Mutex::new(Source::new())),
-            keep_alive: Box::new(()),
-        }
+        Signal::build(SignalFn::Const(a), ())
     }
 
     /// Sample the current value of a signal.
@@ -104,11 +112,7 @@ impl<A: Clone + Send + Sync + 'static> Signal<Signal<A>> {
             )
         }
         commit((), |_| {
-            let signal = Signal {
-                current: Arc::new(Mutex::new(Pending::new(make_callback(self)))),
-                source: Arc::new(Mutex::new(Source::new())),
-                keep_alive: Box::new(()),
-            };
+            let signal = Signal::build(make_callback(self), ());
             let parent = self.clone();
             reg_signal(&mut self.source.lock().unwrap(), &signal,
                 move |_| make_callback(&parent));
@@ -126,13 +130,8 @@ pub struct SignalCycle<A> {
 impl<A: Send + Sync + Clone + 'static> SignalCycle<A> {
     /// stub
     pub fn new() -> SignalCycle<A> {
-        SignalCycle { signal: Signal {
-            current: Arc::new(Mutex::new(Pending::new(SignalFn::from_fn(
-                || panic!("sampled on forward-declaration of signal")
-            )))),
-            source: Arc::new(Mutex::new(Source::new())),
-            keep_alive: Box::new(()),
-        } }
+        const ERR: &'static str = "sampled on forward-declaration of signal";
+        SignalCycle { signal: Signal::build(SignalFn::from_fn(|| panic!(ERR)), ()) }
     }
 
     /// stub
@@ -174,11 +173,7 @@ pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
     where A: Send + Sync + 'static,
 {
     commit((), |_| {
-        let signal = Signal {
-            source: Arc::new(Mutex::new(Source::new())),
-            current: Arc::new(Mutex::new(Pending::new(SignalFn::Const(initial)))),
-            keep_alive: Box::new(stream.clone()),
-        };
+        let signal = Signal::build(SignalFn::Const(initial), stream.clone());
         reg_signal(&mut stream::source(&stream).lock().unwrap(), &signal, SignalFn::Const);
         signal
     })
@@ -189,11 +184,7 @@ pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
 pub fn lift0<A, F>(f: F) -> Signal<A>
     where F: Fn() -> A + Send + Sync + 'static
 {
-    Signal {
-        current: Arc::new(Mutex::new(Pending::new(SignalFn::from_fn(f)))),
-        source: Arc::new(Mutex::new(Source::new())),
-        keep_alive: Box::new(()),
-    }
+    Signal::build(SignalFn::from_fn(f), ())
 }
 
 
@@ -217,24 +208,13 @@ pub fn lift1<A, B, F>(f: F, sa: &Signal<A>) -> Signal<B>
     }
 
     let f = Arc::new(f);
-    let source = Arc::new(Mutex::new(Source::new()));
-    let current = Arc::new(Mutex::new(Pending::new(make_callback(&f, &sa))));
-    let weak_source = source.downgrade();
-    let weak_current = current.downgrade();
-    let sa_2 = sa.clone();
-    sa.source.lock().unwrap().register(move |()| {
-        weak_current.upgrade().map(|cur| register_callback(
-            move || { let _ = cur.lock().map(|mut cur| cur.update()); }))
-            .ok_or(CallbackError::Disappeared)
-        .and(with_weak(&weak_current, |cur| cur.queue(make_callback(&f, &sa_2))))
-        .and(with_weak(&weak_source, |src| src.send(())))
-    });
-    Signal {
-        source: source,
-        current: current,
-        keep_alive: Box::new(()),
-    }
+    let signal = Signal::build(make_callback(&f, &sa), ());
+    let sa_clone = sa.clone();
+    reg_signal(&mut sa.source.lock().unwrap(), &signal,
+        move |_| make_callback(&f, &sa_clone));
+    signal
 }
+
 
 #[cfg(test)]
 mod test {
