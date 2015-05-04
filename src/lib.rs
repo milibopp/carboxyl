@@ -140,7 +140,9 @@ use transaction::commit;
 mod transaction;
 mod subject;
 mod source;
+mod pending;
 pub mod stream;
+pub mod signal;
 #[macro_use]
 pub mod lift;
 

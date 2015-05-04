@@ -4,6 +4,7 @@ use std::sync::{ Arc, Mutex };
 use std::sync::mpsc::{ Receiver, channel };
 use std::thread;
 use source::{ Source, CallbackError, with_weak };
+use signal::{ self, Signal };
 use transaction::commit;
 
 
@@ -120,15 +121,24 @@ impl<A: Send + Sync + Clone + 'static> Sink<A> {
 
 
 /// Trait to wrap cloning of boxed values in a object-safe manner
-trait BoxClone {
+pub trait BoxClone: Sync + Send {
     /// Clone the object as a boxed trait object
     fn box_clone(&self) -> Box<BoxClone>; 
 }
 
-impl<T: Clone + 'static> BoxClone for T {
+impl<T: Sync + Send + Clone + 'static> BoxClone for T {
     fn box_clone(&self) -> Box<BoxClone> {
         Box::new(self.clone())
     }
+}
+
+
+/// Access a stream's source.
+///
+/// This is not defined as a method, so that it can be public to other modules
+/// in this crate while being private outside the crate.
+pub fn source<A>(stream: &Stream<A>) -> &Arc<Mutex<Source<A>>> {
+    &stream.source
 }
 
 
@@ -261,6 +271,23 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
         })
     }
 
+    /// Hold an event in a cell.
+    ///
+    /// The resulting cell `hold`s the value of the last event fired by the
+    /// stream.
+    ///
+    /// ```
+    /// # use carboxyl::Sink;
+    /// let sink = Sink::new();
+    /// let cell = sink.stream().hold(0);
+    /// assert_eq!(cell.sample(), 0);
+    /// sink.send(2);
+    /// assert_eq!(cell.sample(), 2);
+    /// ```
+    pub fn hold(&self, initial: A) -> Signal<A> {
+        signal::hold(initial, self)
+    }
+
     /// A blocking iterator over the stream.
     pub fn events(&self) -> Events<A> { Events::new(self) }
 }
@@ -295,6 +322,27 @@ impl<A: Clone + Send + Sync + 'static> Stream<Option<A>> {
         })
     }
 }
+
+
+/// Make a snapshot of a signal, whenever a stream fires an event.
+pub fn snapshot<A, B>(signal: &Signal<A>, stream: &Stream<B>) -> Stream<(A, B)>
+    where A: Clone + Send + Sync + 'static,
+          B: Clone + Send + Sync + 'static,
+{
+    commit((), |_| {
+        let src = Arc::new(Mutex::new(Source::new()));
+        let weak = src.downgrade();
+        stream.source.lock().unwrap().register({
+            let signal = signal.clone();
+            move |b| with_weak(&weak, |src| src.send((signal.sample(), b)))
+        });
+        Stream {
+            source: src,
+            keep_alive: Box::new((stream.clone(), signal.clone())),
+        }
+    })
+}
+
 
 /// A blocking iterator over events in a stream.
 pub struct Events<A> {
