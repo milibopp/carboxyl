@@ -29,6 +29,25 @@ impl<A: Clone> SignalFn<A> {
 }
 
 
+/// Helper function to register callback handlers related to signal construction.
+fn reg_signal<A, B, F>(parent_source: &mut Source<A>, signal: &Signal<B>, handler: F)
+    where A: Send + Sync + 'static,
+          B: Send + Sync + 'static,
+          F: Fn(A) -> SignalFn<B> + Send + Sync + 'static,
+{
+    let weak_source = signal.source.downgrade();
+    let weak_current = signal.current.downgrade();
+    parent_source.register(move |a|
+        weak_current.upgrade().map(|cur| register_callback(
+            move || { let _ = cur.lock().map(|mut cur| cur.update()); }))
+            .ok_or(CallbackError::Disappeared)
+        .and(with_weak(&weak_current, |cur| cur.queue(handler(a))))
+        .and(with_weak(&weak_source, |src| src.send(())))
+    );
+}
+
+
+
 /// A continuous signal.
 pub struct Signal<A> {
     current: Arc<Mutex<Pending<SignalFn<A>>>>,
@@ -85,23 +104,15 @@ impl<A: Clone + Send + Sync + 'static> Signal<Signal<A>> {
             )
         }
         commit((), |_| {
-            let current = Arc::new(Mutex::new(Pending::new(make_callback(self))));
-            let source = Arc::new(Mutex::new(Source::new()));
-            let weak_source = source.downgrade();
-            let weak_current = current.downgrade();
-            let parent = self.clone();
-            self.source.lock().unwrap().register(move |()|
-                weak_current.upgrade().map(|cur| register_callback(
-                    move || { let _ = cur.lock().map(|mut cur| cur.update()); }))
-                    .ok_or(CallbackError::Disappeared)
-                .and(with_weak(&weak_current, |cur| cur.queue(make_callback(&parent))))
-                .and(with_weak(&weak_source, |src| src.send(())))
-            );
-            Signal {
-                source: source,
-                current: current,
+            let signal = Signal {
+                current: Arc::new(Mutex::new(Pending::new(make_callback(self)))),
+                source: Arc::new(Mutex::new(Source::new())),
                 keep_alive: Box::new(()),
-            }
+            };
+            let parent = self.clone();
+            reg_signal(&mut self.source.lock().unwrap(), &signal,
+                move |_| make_callback(&parent));
+            signal
         })
     }
 }
@@ -144,20 +155,10 @@ impl<A: Send + Sync + Clone + 'static> SignalCycle<A> {
         }
         commit((), move |_| {
             *self.signal.current.lock().unwrap() = Pending::new(make_callback(&definition.current));
-            let sig = definition.current.downgrade();
-            let weak_source = self.signal.source.downgrade();
-            let weak_current = self.signal.current.downgrade();
-            definition.source.lock().unwrap().register(move |()|
-                weak_current.upgrade().map(|cur| register_callback(
-                    move || { let _ = cur.lock().map(|mut cur| cur.update()); }))
-                    .ok_or(CallbackError::Disappeared)
-                .and(with_weak(&weak_current, |cur| cur.queue(make_callback(&sig.upgrade().unwrap()))))
-                .and(with_weak(&weak_source, |src| src.send(())))
-            );
-            Signal {
-                keep_alive: Box::new(definition),
-                ..self.signal
-            }
+            let weak_parent = definition.current.downgrade();
+            reg_signal(&mut definition.source.lock().unwrap(), &self.signal,
+                move |_| make_callback(&weak_parent.upgrade().unwrap()));
+            Signal { keep_alive: Box::new(definition), ..self.signal }
         })
     }
 }
@@ -173,22 +174,13 @@ pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
     where A: Send + Sync + 'static,
 {
     commit((), |_| {
-        let source = Arc::new(Mutex::new(Source::new()));
-        let current = Arc::new(Mutex::new(Pending::new(SignalFn::Const(initial))));
-        let weak_source = source.downgrade();
-        let weak_current = current.downgrade();
-        stream::source(&stream).lock().unwrap().register(move |a| {
-            weak_current.upgrade().map(|cur| register_callback(
-                move || { let _ = cur.lock().map(|mut cur| cur.update()); }))
-                .ok_or(CallbackError::Disappeared)
-            .and(with_weak(&weak_current, |cur| cur.queue(SignalFn::Const(a))))
-            .and(with_weak(&weak_source, |src| src.send(())))
-        });
-        Signal {
-            current: current,
-            source: source,
+        let signal = Signal {
+            source: Arc::new(Mutex::new(Source::new())),
+            current: Arc::new(Mutex::new(Pending::new(SignalFn::Const(initial)))),
             keep_alive: Box::new(stream.clone()),
-        }
+        };
+        reg_signal(&mut stream::source(&stream).lock().unwrap(), &signal, SignalFn::Const);
+        signal
     })
 }
 
