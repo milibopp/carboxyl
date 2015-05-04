@@ -4,7 +4,7 @@ use std::sync::{ Arc, Mutex };
 use std::sync::mpsc::{ Receiver, channel };
 use std::thread;
 use source::{ Source, CallbackError, with_weak };
-use signal::{ self, Signal };
+use signal::{ self, Signal, SignalCycle };
 use transaction::commit;
 
 
@@ -290,6 +290,30 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
 
     /// A blocking iterator over the stream.
     pub fn events(&self) -> Events<A> { Events::new(self) }
+
+    /// Scan a stream and accumulate its event firings in a signal.
+    ///
+    /// Starting at some initial value, each new event changes the value of the
+    /// resulting signal as prescribed by the supplied function.
+    ///
+    /// ```
+    /// # use carboxyl::Sink;
+    /// let sink = Sink::new();
+    /// let sum = sink.stream().scan(0, |a, b| a + b);
+    /// assert_eq!(sum.sample(), 0);
+    /// sink.send(2);
+    /// assert_eq!(sum.sample(), 2);
+    /// sink.send(4);
+    /// assert_eq!(sum.sample(), 6);
+    /// ```
+    pub fn scan<B, F>(&self, initial: B, f: F) -> Signal<B>
+        where B: Send + Sync + Clone + 'static,
+              F: Fn(B, A) -> B + Send + Sync + 'static,
+    {
+        let scan = SignalCycle::new();
+        let def = scan.snapshot(self).map(move |(a, b)| f(a, b)).hold(initial);
+        scan.define(def)
+    }
 }
 
 impl<A: Clone + Send + Sync + 'static> Stream<Option<A>> {
