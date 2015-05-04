@@ -686,7 +686,3 @@ impl<A: Send + Sync + 'static> Iterator for Events<A> {
     type Item = A;
     fn next(&mut self) -> Option<A> { self.receiver.recv().ok() }
 }
-
-
-#[cfg(test)]
-mod test_lib;
