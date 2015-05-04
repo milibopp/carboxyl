@@ -1,8 +1,8 @@
 //! Lifting of n-ary functions.
 //!
-//! A lift maps a function on values to a function on cells. Given a function of
-//! type `F: Fn(A, B, …) -> R` and cells of types `Cell<A>, Cell<B>, …` the
-//! `lift!` macro creates a `Cell<R>`, whose content is computed using the
+//! A lift maps a function on values to a function on signals. Given a function of
+//! type `F: Fn(A, B, …) -> R` and signals of types `Signal<A>, Signal<B>, …` the
+//! `lift!` macro creates a `Signal<R>`, whose content is computed using the
 //! function.
 //!
 //! Currently lift is only implemented for functions with up to four arguments.

@@ -13,8 +13,8 @@ applications. Read more [in the docs…][docs]
 Here is a simple example of how you can use the primitives provided by
 *Carboxyl*. First of all, events can be sent into a *sink*. From a sink one can
 create a *stream* of events. Streams can also be filtered, mapped and merged. A
-*cell* is an abstraction of a value that may change over time. One can e.g.
-hold the last event from a stream in a cell.
+*signal* is an abstraction of a value that may change over time. One can e.g.
+hold the last event from a stream in a signal.
 
 ```rust
 use carboxyl::Sink;

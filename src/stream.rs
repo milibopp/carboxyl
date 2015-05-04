@@ -85,7 +85,7 @@ impl<A: Send + Sync + Clone + 'static> Sink<A> {
     /// Asynchronous send.
     ///
     /// Same as `send`, but it spawns a new thread to process the updates to
-    /// dependent streams and cells.
+    /// dependent streams and signals.
     pub fn send_async(&self, a: A) {
         let clone = self.clone();
         thread::spawn(move || clone.send(a));
@@ -271,18 +271,18 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
         })
     }
 
-    /// Hold an event in a cell.
+    /// Hold an event in a signal.
     ///
-    /// The resulting cell `hold`s the value of the last event fired by the
+    /// The resulting signal `hold`s the value of the last event fired by the
     /// stream.
     ///
     /// ```
     /// # use carboxyl::Sink;
     /// let sink = Sink::new();
-    /// let cell = sink.stream().hold(0);
-    /// assert_eq!(cell.sample(), 0);
+    /// let signal = sink.stream().hold(0);
+    /// assert_eq!(signal.sample(), 0);
     /// sink.send(2);
-    /// assert_eq!(cell.sample(), 2);
+    /// assert_eq!(signal.sample(), 2);
     /// ```
     pub fn hold(&self, initial: A) -> Signal<A> {
         signal::hold(initial, self)

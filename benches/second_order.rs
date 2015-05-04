@@ -12,11 +12,11 @@ use carboxyl::Sink;
 
 /// Second-order benchmark.
 ///
-/// Generate `n_sinks` `Stream<()>`, then for each stream create a `Cell<i32>`
-/// that counts the number of firings. Create a `Stream<Cell<i32>>` that every
-/// 10 network steps sequentially moves to the next cell. Create a `Cell<i32>`
-/// from this stream. At each network step, fire 10 `Stream<()>` at random,
-/// then print the current value of the `Cell<i32>`.
+/// Generate `n_sinks` `Stream<()>`, then for each stream create a `Signal<i32>`
+/// that counts the number of firings. Create a `Stream<Signal<i32>>` that every
+/// 10 network steps sequentially moves to the next signal. Create a
+/// `Signal<i32>` from this stream. At each network step, fire 10 `Stream<()>`
+/// at random, then print the current value of the `Signal<i32>`.
 ///
 /// Benchmark the time required for `n_steps` steps.
 fn second_order(n_sinks: usize, n_steps: usize, b: &mut Bencher) {
@@ -32,7 +32,7 @@ fn second_order(n_sinks: usize, n_steps: usize, b: &mut Bencher) {
         let counters = counters.clone();
         stepper.stream().map(move |k| counters[k / 10].clone())
     };
-    let cell = walker.hold(counters[0].clone()).switch();
+    let signal = walker.hold(counters[0].clone()).switch();
 
     // Feed events
     let mut rng = XorShiftRng::new_unseeded();
@@ -41,7 +41,7 @@ fn second_order(n_sinks: usize, n_steps: usize, b: &mut Bencher) {
         for sink in sample(&mut rng, sinks.iter(), 10) {
             sink.send(());
         }
-        format!("{}", cell.sample());
+        format!("{}", signal.sample());
     });
 }
 
