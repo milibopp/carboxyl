@@ -216,6 +216,56 @@ pub fn lift1<A, B, F>(f: F, sa: &Signal<A>) -> Signal<B>
 }
 
 
+/// Binary lift
+pub fn lift2<A, B, C, F>(f: F, sa: &Signal<A>, sb: &Signal<B>) -> Signal<C>
+    where A: Send + Sync + Clone + 'static,
+          B: Send + Sync + Clone + 'static,
+          C: Send + Sync + Clone + 'static,
+          F: Fn(A, B) -> C + Send + Sync + 'static,
+{
+    fn make_callback<A, B, C, F>(f: &Arc<F>, sa: &Signal<A>, sb: &Signal<B>) -> SignalFn<C>
+        where A: Send + Sync + Clone + 'static,
+              B: Send + Sync + Clone + 'static,
+              C: Send + Sync + Clone + 'static,
+              F: Fn(A, B) -> C + Send + Sync + 'static,
+    {
+        use self::SignalFn::{ Const, Func };
+        let sa_clone = sa.clone();
+        let sb_clone = sb.clone();
+        let f = f.clone();
+        match (sa.current.lock().unwrap().future(), sb.current.lock().unwrap().future()) {
+            (&Const(ref a), &Const(ref b)) => Const(f(a.clone(), b.clone())),
+            (&Const(ref a), &Func(_)) => {
+                let a = a.clone();
+                SignalFn::from_fn(move || f(a.clone(), sb_clone.sample()))
+            },
+            (&Func(_), &Const(ref b)) => {
+                let b = b.clone();
+                SignalFn::from_fn(move || f(sa_clone.sample(), b.clone()))
+            },
+            (&Func(_), &Func(_)) => SignalFn::from_fn(
+                move || f(sa_clone.sample(), sb_clone.sample())
+            ),
+        }
+    }
+
+    let f = Arc::new(f);
+    let signal = Signal::build(make_callback(&f, &sa, &sb), ());
+    reg_signal(&mut sa.source.lock().unwrap(), &signal, {
+        let sa_clone = sa.clone();
+        let sb_clone = sb.clone();
+        let f = f.clone();
+        move |_| make_callback(&f, &sa_clone, &sb_clone)
+    });
+    reg_signal(&mut sb.source.lock().unwrap(), &signal, {
+        let sa_clone = sa.clone();
+        let sb_clone = sb.clone();
+        move |_| make_callback(&f, &sa_clone, &sb_clone)
+    });
+    signal
+}
+
+
 #[cfg(test)]
 mod test {
     use ::stream::Sink;
@@ -237,6 +287,19 @@ mod test {
     fn lift1() {
         let sig2 = signal::lift1(|n| n + 2, &Signal::new(3));
         assert_eq!(sig2.sample(), 5);
+    }
+
+    #[test]
+    fn lift2() {
+        let sink1 = Sink::new();
+        let sink2 = Sink::new();
+        let lifted = signal::lift2(|a, b| a + b, &sink1.stream().hold(0),
+            &sink2.stream().hold(3));
+        assert_eq!(lifted.sample(), 3);
+        sink1.send(1);
+        assert_eq!(lifted.sample(), 4);
+        sink2.send(11);
+        assert_eq!(lifted.sample(), 12);
     }
 
     #[test]
