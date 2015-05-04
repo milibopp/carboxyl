@@ -360,8 +360,8 @@ mod test {
     #[test]
     fn snapshot_order_standard() {
         let sink = Sink::new();
-        let cell = sink.stream().hold(0);
-        let mut events = cell.snapshot(&sink.stream()).events();
+        let signal = sink.stream().hold(0);
+        let mut events = signal.snapshot(&sink.stream()).events();
         sink.send(1);
         assert_eq!(events.next(), Some((0, 1)));
     }
@@ -369,8 +369,8 @@ mod test {
     #[test]
     fn snapshot_lift_order_standard() {
         let sink = Sink::new();
-        let cell = sink.stream().hold(0);
-        let mut events = lift1(|x| x, &cell)
+        let signal = sink.stream().hold(0);
+        let mut events = lift1(|x| x, &signal)
             .snapshot(&sink.stream())
             .events();
         sink.send(1);
@@ -381,10 +381,10 @@ mod test {
     fn snapshot_order_alternative() {
         let sink = Sink::new();
         // Invert the "natural" order of the registry by declaring the stream before
-        // the cell, which are both used by the snapshot.
+        // the signal, which are both used by the snapshot.
         let first = sink.stream().map(|x| x);
-        let cell = sink.stream().hold(0);
-        let mut events = cell.snapshot(&first).events();
+        let signal = sink.stream().hold(0);
+        let mut events = signal.snapshot(&first).events();
         sink.send(1);
         assert_eq!(events.next(), Some((0, 1)));
     }
