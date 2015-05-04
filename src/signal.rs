@@ -8,7 +8,7 @@ use transaction::{ commit, register_callback };
 use pending::Pending;
 
 
-enum SignalFn<A> {
+pub enum SignalFn<A> {
     Const(A),
     Func(Box<Fn() -> A + Send + Sync + 'static>),
 }
@@ -30,7 +30,7 @@ impl<A: Clone> SignalFn<A> {
 
 
 /// Helper function to register callback handlers related to signal construction.
-fn reg_signal<A, B, F>(parent_source: &mut Source<A>, signal: &Signal<B>, handler: F)
+pub fn reg_signal<A, B, F>(parent_source: &mut Source<A>, signal: &Signal<B>, handler: F)
     where A: Send + Sync + 'static,
           B: Send + Sync + 'static,
           F: Fn(A) -> SignalFn<B> + Send + Sync + 'static,
@@ -46,6 +46,23 @@ fn reg_signal<A, B, F>(parent_source: &mut Source<A>, signal: &Signal<B>, handle
     );
 }
 
+
+/// External helper function to build a signal.
+pub fn signal_build<A, K>(func: SignalFn<A>, keep_alive: K) -> Signal<A>
+        where K: Send + Sync + Clone + 'static
+{
+    Signal::build(func, keep_alive)
+}
+
+/// External accessor to current state of a signal.
+pub fn signal_current<A>(signal: &Signal<A>) -> &Arc<Mutex<Pending<SignalFn<A>>>> {
+    &signal.current
+}
+
+/// External accessor to signal source.
+pub fn signal_source<A>(signal: &Signal<A>) -> &Arc<Mutex<Source<()>>> {
+    &signal.source
+}
 
 
 /// A continuous signal.
@@ -180,126 +197,18 @@ pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
 }
 
 
-/// Lift a 0-ary function to a signal.
-pub fn lift0<A, F>(f: F) -> Signal<A>
-    where F: Fn() -> A + Send + Sync + 'static
-{
-    Signal::build(SignalFn::from_fn(f), ())
-}
-
-
-/// Unary lift
-pub fn lift1<A, B, F>(f: F, sa: &Signal<A>) -> Signal<B>
-    where A: Send + Sync + Clone + 'static,
-          B: Send + Sync + Clone + 'static,
-          F: Fn(A) -> B + Send + Sync + 'static,
-{
-    fn make_callback<A, B, F>(f: &Arc<F>, parent: &Signal<A>) -> SignalFn<B>
-        where A: Send + Sync + Clone + 'static,
-              B: Send + Sync + Clone + 'static,
-              F: Fn(A) -> B + Send + Sync + 'static,
-    {
-        let pclone = parent.clone();
-        let f = f.clone();
-        match *parent.current.lock().unwrap().future() {
-            SignalFn::Const(ref a) => SignalFn::Const(f(a.clone())),
-            SignalFn::Func(_) => SignalFn::from_fn(move || f(pclone.sample())),
-        }
-    }
-
-    let f = Arc::new(f);
-    let signal = Signal::build(make_callback(&f, &sa), ());
-    let sa_clone = sa.clone();
-    reg_signal(&mut sa.source.lock().unwrap(), &signal,
-        move |_| make_callback(&f, &sa_clone));
-    signal
-}
-
-
-/// Binary lift
-pub fn lift2<A, B, C, F>(f: F, sa: &Signal<A>, sb: &Signal<B>) -> Signal<C>
-    where A: Send + Sync + Clone + 'static,
-          B: Send + Sync + Clone + 'static,
-          C: Send + Sync + Clone + 'static,
-          F: Fn(A, B) -> C + Send + Sync + 'static,
-{
-    fn make_callback<A, B, C, F>(f: &Arc<F>, sa: &Signal<A>, sb: &Signal<B>) -> SignalFn<C>
-        where A: Send + Sync + Clone + 'static,
-              B: Send + Sync + Clone + 'static,
-              C: Send + Sync + Clone + 'static,
-              F: Fn(A, B) -> C + Send + Sync + 'static,
-    {
-        use self::SignalFn::{ Const, Func };
-        let sa_clone = sa.clone();
-        let sb_clone = sb.clone();
-        let f = f.clone();
-        match (sa.current.lock().unwrap().future(), sb.current.lock().unwrap().future()) {
-            (&Const(ref a), &Const(ref b)) => Const(f(a.clone(), b.clone())),
-            (&Const(ref a), &Func(_)) => {
-                let a = a.clone();
-                SignalFn::from_fn(move || f(a.clone(), sb_clone.sample()))
-            },
-            (&Func(_), &Const(ref b)) => {
-                let b = b.clone();
-                SignalFn::from_fn(move || f(sa_clone.sample(), b.clone()))
-            },
-            (&Func(_), &Func(_)) => SignalFn::from_fn(
-                move || f(sa_clone.sample(), sb_clone.sample())
-            ),
-        }
-    }
-
-    let f = Arc::new(f);
-    let signal = Signal::build(make_callback(&f, &sa, &sb), ());
-    reg_signal(&mut sa.source.lock().unwrap(), &signal, {
-        let sa_clone = sa.clone();
-        let sb_clone = sb.clone();
-        let f = f.clone();
-        move |_| make_callback(&f, &sa_clone, &sb_clone)
-    });
-    reg_signal(&mut sb.source.lock().unwrap(), &signal, {
-        let sa_clone = sa.clone();
-        let sb_clone = sb.clone();
-        move |_| make_callback(&f, &sa_clone, &sb_clone)
-    });
-    signal
-}
 
 
 #[cfg(test)]
 mod test {
     use ::stream::Sink;
     use ::signal::{ self, Signal, SignalCycle };
+    use ::lift::lift1;
 
     #[test]
     fn clone() {
         let b = Signal::new(3);
         assert_eq!(b.clone().sample(), 3);
-    }
-
-    #[test]
-    fn lift0() {
-        let signal = signal::lift0(|| 3);
-        assert_eq!(signal.sample(), 3);
-    }
-
-    #[test]
-    fn lift1() {
-        let sig2 = signal::lift1(|n| n + 2, &Signal::new(3));
-        assert_eq!(sig2.sample(), 5);
-    }
-
-    #[test]
-    fn lift2() {
-        let sink1 = Sink::new();
-        let sink2 = Sink::new();
-        let lifted = signal::lift2(|a, b| a + b, &sink1.stream().hold(0),
-            &sink2.stream().hold(3));
-        assert_eq!(lifted.sample(), 3);
-        sink1.send(1);
-        assert_eq!(lifted.sample(), 4);
-        sink2.send(11);
-        assert_eq!(lifted.sample(), 12);
     }
 
     #[test]
@@ -360,7 +269,7 @@ mod test {
                 .hold(Sink::new().stream().hold(Some(-3)))
                 .switch()
         };
-        let fn_output = signal::lift1(|x| x.map_or(0, |x| 2*x), &output);
+        let fn_output = lift1(|x| x.map_or(0, |x| 2*x), &output);
         assert_eq!(output.sample(), Some(-3));
         assert_eq!(fn_output.sample(), -6);
         button1.send(());
@@ -405,7 +314,7 @@ mod test {
     fn snapshot_lift_order_standard() {
         let sink = Sink::new();
         let cell = sink.stream().hold(0);
-        let mut events = signal::lift1(|x| x, &cell)
+        let mut events = lift1(|x| x, &cell)
             .snapshot(&sink.stream())
             .events();
         sink.send(1);
