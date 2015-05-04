@@ -40,4 +40,48 @@ impl<T> Deref for Pending<T> {
     fn deref(&self) -> &T { &self.current }
 }
 
-// TODO: write tests
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn new_derefs_identical() {
+        assert_eq!(*Pending::new(3), 3);
+    }
+
+    #[test]
+    fn queue_does_not_affect_deref() {
+        let mut p = Pending::new(2);
+        p.queue(4);
+        assert_eq!(*p, 2);
+    }
+
+    #[test]
+    fn new_future_identical() {
+        assert_eq!(*Pending::new(5).future(), 5);
+    }
+
+    #[test]
+    fn queue_affects_future() {
+        let mut p = Pending::new(10);
+        p.queue(6);
+        assert_eq!(*p.future(), 6);
+    }
+
+    #[test]
+    fn updated_deref() {
+        let mut p = Pending::new(-2);
+        p.queue(2);
+        p.update();
+        assert_eq!(*p, 2);
+    }
+
+    #[test]
+    fn updated_future() {
+        let mut p = Pending::new(-7);
+        p.queue(0);
+        p.update();
+        assert_eq!(*p.future(), 0);
+    }
+}
