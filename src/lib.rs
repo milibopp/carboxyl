@@ -1,30 +1,46 @@
 //! *Carboxyl* provides primitives for functional reactive programming in Rust.
-//! It is heavily influenced by the
-//! [Sodium](https://github.com/SodiumFRP/sodium/) libraries.
+//! It draws inspiration from the [Sodium][sodium] libraries and Push-Pull FRP,
+//! as described by [Elliott (2009)][elliott_push_pull].
 //!
-//! Functional reactive programming (FRP) is a paradigm that effectively fixes
-//! the issues present in the traditional observer pattern approach to event
-//! handling. It uses a set of compositional primitives to model the dependency
-//! graph of a reactive system. These primitives essentially provide a type- and
-//! thread-safe, compositional abstraction around events and  mutable state in
-//! your application to avoid the pitfalls normally associated with it.
+//! [sodium]: https://github.com/SodiumFRP/sodium/
+//! [elliott_push_pull]: http://conal.net/papers/push-pull-frp/push-pull-frp.pdf
 //!
-//! If you want to learn more about FRP in general, check out [the Sodium
-//! blog](http://blog.reactiveprogramming.org).
+//!
+//! # Overview
+//!
+//! Functional reactive programming (FRP) is a composable and modular
+//! abstraction for creating dynamic and reactive systems. In its most general
+//! form it models these systems as a composition of two basic primitives:
+//! *streams* are a series of singular events and *signals* are continuously
+//! changing values.
+//!
+//! *Carboxyl* is an imperative, hybrid push- and pull-based implementation of
+//! FRP. Streams and the discrete components of signals are data-driven, i.e.
+//! whenever an event occurs the resulting changes are propagated to everything
+//! that depends on it.
+//!
+//! However, the continuous components of signals are demand-driven. Internally,
+//! *Carboxyl* stores the state of a signal as a function. This function has to
+//! be evaluated by consumers of a signal to obtain a concrete value.
+//!
+//! Nonetheless, *Carboxyl* has no explicit notion of time. Its signals are
+//! functions that can be evaluated at any time, but they do not carry any
+//! inherent notion of time. Synchronization and atomicity is achieved by a
+//! transaction system.
 //!
 //!
 //! # Functional reactive primitives
 //!
-//! This library provides two basic types: `Stream` and `Cell`. A stream is a
-//! discrete sequence of events, a cell is a container for values that change
+//! This library provides two basic types: `Stream` and `Signal`. A stream is a
+//! discrete sequence of events, a signal is a container for values that change
 //! (discretely) over time.
 //!
-//! The FRP primitive functions are mostly implemented as methods of the basic
-//! types to ease method chaining, except for `lift2` which does not really
-//! belong to any type in particular.
+//! The FRP primitives are mostly implemented as methods of the basic types to
+//! ease method chaining, except for the various lifting functions, as they do
+//! not really belong to any type in particular.
 //!
 //! In addition, the `Sink` type allows one to create a stream of events by
-//! dumping values into it. It is the only way to create an event from scratch,
+//! sending values into it. It is the only way to create a stream from scratch,
 //! i.e. without using any of the other primitives.
 //!
 //!
@@ -33,26 +49,25 @@
 //! Here is a simple example of how you can use the primitives provided by
 //! *Carboxyl*. First of all, events can be sent into a *sink*. From a sink one
 //! can create a *stream* of events. Streams can also be filtered, mapped and
-//! merged. A *cell* is an abstraction of a value that may change over time. One
-//! can e.g.  hold the last event from a stream in a cell.
+//! merged. One can e.g. hold the last event from a stream as a signal.
 //!
 //! ```
 //! use carboxyl::Sink;
 //!
 //! let sink = Sink::new();
 //! let stream = sink.stream();
-//! let cell = stream.hold(3);
+//! let signal = stream.hold(3);
 //!
-//! // The current value of the cell is initially 3
-//! assert_eq!(cell.sample(), 3);
+//! // The current value of the signal is initially 3
+//! assert_eq!(signal.sample(), 3);
 //!
-//! // When we fire an event, the cell get updated accordingly
+//! // When we fire an event, the signal get updated accordingly
 //! sink.send(5);
-//! assert_eq!(cell.sample(), 5);
+//! assert_eq!(signal.sample(), 5);
 //! ```
 //!
 //! One can also directly iterate over the stream instead of holding it in a
-//! cell:
+//! signal:
 //!
 //! ```
 //! # use carboxyl::Sink;
@@ -63,7 +78,7 @@
 //! assert_eq!(events.next(), Some(4));
 //! ```
 //!
-//! Streams and cells can be combined using various primitives. We can map a
+//! Streams and signals can be combined using various primitives. We can map a
 //! stream to another stream using a function:
 //!
 //! ```
@@ -84,7 +99,7 @@
 //! # let stream = sink.stream();
 //! let negatives = stream.filter(|&x| x < 0).hold(0);
 //!
-//! // This won't arrive at the cell.
+//! // This won't arrive at the signal.
 //! sink.send(4);
 //! assert_eq!(negatives.sample(), 0);
 //!
@@ -93,7 +108,7 @@
 //! assert_eq!(negatives.sample(), -3);
 //! ```
 //!
-//! There are some other methods on streams and cells, that you can find in
+//! There are some other methods on streams and signals, that you can find in
 //! their respective APIs.
 //!
 //! Note that all these objects are `Send + Sync + Clone`. This means you can
@@ -113,10 +128,10 @@
 //! not be altered, which is guaranteed by the `Fn(…) -> …)` trait bound.
 //!
 //! However, both closures and functions could still have side effects such as
-//! I/O, changing shared mutable state via `Arc` pointers, etc. While Rust's
-//! type system cannot prevent this, you should generally not pass such
-//! functions to the FRP primitives, as they break the benefits you get from
-//! using FRP. (Except temporary print statements for debugging.)
+//! I/O, changing mutable state via `Mutex` or `RefCell`, etc. While Rust's type
+//! system cannot prevent this, you should generally not pass such functions to
+//! the FRP primitives, as they break the benefits you get from using FRP.
+//! (An exception here is debugging output.)
 
 #![feature(alloc)]
 #![cfg_attr(test, feature(test))]
