@@ -1,6 +1,6 @@
 [package]
 name = "carboxyl"
-version = "0.0.9"
+version = "0.0.10"
 authors = ["Emilia Bopp <Emilia.bopp@aepsil0n.de>"]
 description = "Library for functional reactive programming"
 documentation = "http://www.rust-ci.org/aepsil0n/carboxyl/doc/carboxyl/"
