@@ -1,9 +1,9 @@
 //! Streams of discrete events
 
-use std::sync::{ Arc, Mutex };
+use std::sync::{ Arc, Mutex, Weak };
 use std::sync::mpsc::{ Receiver, channel };
 use std::thread;
-use source::{ Source, CallbackError, with_weak };
+use source::{ Source, CallbackError, CallbackResult, with_weak };
 use signal::{ self, Signal, SignalCycle };
 use transaction::commit;
 
@@ -342,6 +342,70 @@ impl<A: Clone + Send + Sync + 'static> Stream<Option<A>> {
             Stream {
                 source: src,
                 keep_alive: Box::new(self.clone())
+            }
+        })
+    }
+}
+
+impl<A: Send + Sync + Clone + 'static> Stream<Stream<A>> {
+    /// Switch between streams.
+    ///
+    /// This takes a stream of streams and maps it to a new stream, which fires
+    /// all events from the most recent stream fired into it.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use carboxyl::{ Sink, Stream };
+    /// // Create sinks
+    /// let stream_sink: Sink<Stream<i32>> = Sink::new();
+    /// let sink1: Sink<i32> = Sink::new();
+    /// let sink2: Sink<i32> = Sink::new();
+    ///
+    /// // Switch and listen
+    /// let switched = stream_sink.stream().switch();
+    /// let mut events = switched.events();
+    ///
+    /// // Should not receive events from either sink
+    /// sink1.send(1); sink2.send(2);
+    ///
+    /// // Now switch to sink 2
+    /// stream_sink.send(sink2.stream());
+    /// sink1.send(3); sink2.send(4);
+    /// assert_eq!(events.next(), Some(4));
+    ///
+    /// // And then to sink 1
+    /// stream_sink.send(sink1.stream());
+    /// sink1.send(5); sink2.send(6);
+    /// assert_eq!(events.next(), Some(5));
+    /// ```
+    pub fn switch(&self) -> Stream<A> {
+        use std::sync::mpsc::{ channel, TryRecvError, Sender };
+        fn rewire_callbacks<A>(new_stream: Stream<A>, source: Weak<Mutex<Source<A>>>,
+                               terminate: &Mutex<Option<Sender<()>>>)
+            -> CallbackResult
+            where A: Send + Sync + Clone + 'static,
+        {
+            let (tx, rx) = channel::<()>();
+            *terminate.lock().unwrap() = Some(tx);
+            new_stream.source.lock().unwrap().register(move |a|
+                match rx.try_recv() {
+                    Err(TryRecvError::Disconnected) => Err(CallbackError::Disappeared),
+                    _ => Ok(()),
+                }.and_then(|_| with_weak(&source, |src| src.send(a)))
+            );
+            Ok(())
+        }
+        commit((), |_| {
+            let src = Arc::new(Mutex::new(Source::new()));
+            let weak = src.downgrade();
+            self.source.lock().unwrap().register({
+                let terminate = Mutex::new(None);
+                move |stream| rewire_callbacks(stream, weak.clone(), &terminate)
+            });
+            Stream {
+                source: src,
+                keep_alive: Box::new(self.clone()),
             }
         })
     }
