@@ -6,6 +6,7 @@ use std::thread;
 use source::{ Source, CallbackError, CallbackResult, with_weak };
 use signal::{ self, Signal, SignalCycle };
 use transaction::commit;
+use readonly::ReadOnly;
 
 
 /// An event sink.
@@ -313,6 +314,37 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
         let scan = SignalCycle::new();
         let def = scan.snapshot(self).map(move |(a, b)| f(a, b)).hold(initial);
         scan.define(def)
+    }
+
+    /// Scan a stream and accumulate its event firings in some mutable state.
+    ///
+    /// Semantically this is equivalent to `scan`. However, it allows one to use
+    /// a non-Clone type as accumulator and update it with efficient in-place
+    /// operations.
+    ///
+    /// The resulting signal contains a read-only smart pointer, which serves as
+    /// a view into its mutable state. Note, that sampling a read-only signal
+    /// does not yield a fixed view of its current state, but rather that the
+    /// sample traces subsequent changes.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use carboxyl::Sink;
+    /// let sink: Sink<i32> = Sink::new();
+    /// let sum = sink.stream().scan_mut(0, |sum, a| *sum += a);
+    /// let sample = sum.sample();
+    /// assert_eq!(*sample.read().unwrap(), 0);
+    /// sink.send(2);
+    /// assert_eq!(*sample.read().unwrap(), 2);
+    /// sink.send(4);
+    /// assert_eq!(*sample.read().unwrap(), 6);
+    /// ```
+    pub fn scan_mut<B, F>(&self, initial: B, f: F) -> Signal<ReadOnly<B>>
+        where B: Send + Sync + 'static,
+              F: Fn(&mut B, A) + Send + Sync + 'static,
+    {
+        signal::scan_mut(self, initial, f)
     }
 }
 
