@@ -144,10 +144,12 @@ extern crate lazy_static;
 
 pub use stream::{ Sink, Stream };
 pub use signal::{ Signal, SignalCycle };
+pub use readonly::{ ReadOnly, ReadOnlyGuard };
 
 mod transaction;
 mod source;
 mod pending;
+mod readonly;
 mod stream;
 mod signal;
 #[macro_use]

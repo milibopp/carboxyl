@@ -1,11 +1,12 @@
 //! Continuous time signals
 
-use std::sync::{ Arc, Mutex };
+use std::sync::{ Arc, Mutex, RwLock };
 use std::ops::Deref;
 use source::{ Source, with_weak, CallbackError };
 use stream::{ self, BoxClone, Stream };
 use transaction::{ commit, register_callback };
 use pending::Pending;
+use readonly::{ self, ReadOnly };
 
 
 pub enum SignalFn<A> {
@@ -286,6 +287,19 @@ pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
 }
 
 
+pub fn scan_mut<A, B, F>(stream: &Stream<A>, initial: B, f: F) -> Signal<ReadOnly<B>>
+    where A: Send + Sync + 'static,
+          B: Send + Sync + 'static,
+          F: Fn(&mut B, A) + Send + Sync + 'static,
+{
+    commit((), move |_| {
+        let state = Arc::new(RwLock::new(initial));
+        let signal = Signal::build(SignalFn::Const(readonly::create(state.clone())), stream.clone());
+        reg_signal(&mut stream::source(&stream).lock().unwrap(), &signal,
+            move |a| { f(&mut state.write().unwrap(), a); SignalFn::Const(readonly::create(state.clone())) });
+        signal
+    })
+}
 
 
 #[cfg(test)]
