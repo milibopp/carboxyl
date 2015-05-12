@@ -4,9 +4,8 @@ use std::sync::{ Arc, Mutex, Weak };
 use std::sync::mpsc::{ Receiver, channel };
 use std::thread;
 use source::{ Source, CallbackError, CallbackResult, with_weak };
-use signal::{ self, Signal, SignalCycle };
+use signal::{ self, Signal, SignalMut, SignalCycle };
 use transaction::commit;
-use readonly::ReadOnly;
 
 
 /// An event sink.
@@ -319,28 +318,27 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
     /// Scan a stream and accumulate its event firings in some mutable state.
     ///
     /// Semantically this is equivalent to `scan`. However, it allows one to use
-    /// a non-Clone type as accumulator and update it with efficient in-place
+    /// a non-Clone type as an accumulator and update it with efficient in-place
     /// operations.
     ///
-    /// The resulting signal contains a read-only smart pointer, which serves as
-    /// a view into its mutable state. Note, that sampling a read-only signal
-    /// does not yield a fixed view of its current state, but rather that the
-    /// sample traces subsequent changes.
+    /// The resulting `SignalMut` does have a slightly different API from a
+    /// regular `Signal` as it does not allow clones.
     ///
     /// # Example
     ///
     /// ```
-    /// # use carboxyl::Sink;
+    /// # use carboxyl::{ Sink, Signal };
     /// let sink: Sink<i32> = Sink::new();
-    /// let sum = sink.stream().scan_mut(0, |sum, a| *sum += a);
-    /// let sample = sum.sample();
-    /// assert_eq!(*sample.read().unwrap(), 0);
+    /// let sum = sink.stream()
+    ///     .scan_mut(0, |sum, a| *sum += a)
+    ///     .combine(&Signal::new(()), |sum, ()| *sum);
+    /// assert_eq!(sum.sample(), 0);
     /// sink.send(2);
-    /// assert_eq!(*sample.read().unwrap(), 2);
+    /// assert_eq!(sum.sample(), 2);
     /// sink.send(4);
-    /// assert_eq!(*sample.read().unwrap(), 6);
+    /// assert_eq!(sum.sample(), 6);
     /// ```
-    pub fn scan_mut<B, F>(&self, initial: B, f: F) -> Signal<ReadOnly<B>>
+    pub fn scan_mut<B, F>(&self, initial: B, f: F) -> SignalMut<B>
         where B: Send + Sync + 'static,
               F: Fn(&mut B, A) + Send + Sync + 'static,
     {
