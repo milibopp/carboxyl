@@ -14,8 +14,8 @@ fn drag_drop_example() {
     let rects = SignalCycle::<Vec<i32>>::new();
     let events = sink.stream();
 
-    let spawned = rects.snapshot(&events)
-        .map(|(mut rects, ev)| match ev {
+    let spawned = rects.snapshot(&events,
+        |mut rects, ev| match ev {
             Event::Add(r) => { rects.push(r); rects },
             _ => rects,
         })

@@ -4,9 +4,8 @@ use std::sync::{ Arc, Mutex, Weak };
 use std::sync::mpsc::{ Receiver, channel };
 use std::thread;
 use source::{ Source, CallbackError, CallbackResult, with_weak };
-use signal::{ self, Signal, SignalCycle };
+use signal::{ self, Signal, SignalMut, SignalCycle };
 use transaction::commit;
-use readonly::ReadOnly;
 
 
 /// An event sink.
@@ -312,35 +311,34 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
               F: Fn(B, A) -> B + Send + Sync + 'static,
     {
         let scan = SignalCycle::new();
-        let def = scan.snapshot(self).map(move |(a, b)| f(a, b)).hold(initial);
+        let def = scan.snapshot(self, f).hold(initial);
         scan.define(def)
     }
 
     /// Scan a stream and accumulate its event firings in some mutable state.
     ///
     /// Semantically this is equivalent to `scan`. However, it allows one to use
-    /// a non-Clone type as accumulator and update it with efficient in-place
+    /// a non-Clone type as an accumulator and update it with efficient in-place
     /// operations.
     ///
-    /// The resulting signal contains a read-only smart pointer, which serves as
-    /// a view into its mutable state. Note, that sampling a read-only signal
-    /// does not yield a fixed view of its current state, but rather that the
-    /// sample traces subsequent changes.
+    /// The resulting `SignalMut` does have a slightly different API from a
+    /// regular `Signal` as it does not allow clones.
     ///
     /// # Example
     ///
     /// ```
-    /// # use carboxyl::Sink;
+    /// # use carboxyl::{ Sink, Signal };
     /// let sink: Sink<i32> = Sink::new();
-    /// let sum = sink.stream().scan_mut(0, |sum, a| *sum += a);
-    /// let sample = sum.sample();
-    /// assert_eq!(*sample.read().unwrap(), 0);
+    /// let sum = sink.stream()
+    ///     .scan_mut(0, |sum, a| *sum += a)
+    ///     .combine(&Signal::new(()), |sum, ()| *sum);
+    /// assert_eq!(sum.sample(), 0);
     /// sink.send(2);
-    /// assert_eq!(*sample.read().unwrap(), 2);
+    /// assert_eq!(sum.sample(), 2);
     /// sink.send(4);
-    /// assert_eq!(*sample.read().unwrap(), 6);
+    /// assert_eq!(sum.sample(), 6);
     /// ```
-    pub fn scan_mut<B, F>(&self, initial: B, f: F) -> Signal<ReadOnly<B>>
+    pub fn scan_mut<B, F>(&self, initial: B, f: F) -> SignalMut<B>
         where B: Send + Sync + 'static,
               F: Fn(&mut B, A) + Send + Sync + 'static,
     {
@@ -445,16 +443,18 @@ impl<A: Send + Sync + Clone + 'static> Stream<Stream<A>> {
 
 
 /// Make a snapshot of a signal, whenever a stream fires an event.
-pub fn snapshot<A, B>(signal: &Signal<A>, stream: &Stream<B>) -> Stream<(A, B)>
+pub fn snapshot<A, B, C, F>(signal: &Signal<A>, stream: &Stream<B>, f: F) -> Stream<C>
     where A: Clone + Send + Sync + 'static,
           B: Clone + Send + Sync + 'static,
+          C: Clone + Send + Sync + 'static,
+          F: Fn(A, B) -> C + Send + Sync + 'static,
 {
     commit((), |_| {
         let src = Arc::new(Mutex::new(Source::new()));
         let weak = src.downgrade();
         stream.source.lock().unwrap().register({
             let signal = signal.clone();
-            move |b| with_weak(&weak, |src| src.send((signal.sample(), b)))
+            move |b| with_weak(&weak, |src| src.send(f(signal.sample(), b)))
         });
         Stream {
             source: src,

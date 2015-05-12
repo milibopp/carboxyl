@@ -7,6 +7,7 @@ use stream::{ self, BoxClone, Stream };
 use transaction::{ commit, register_callback };
 use pending::Pending;
 use readonly::{ self, ReadOnly };
+use lift;
 
 
 pub enum SignalFn<A> {
@@ -112,15 +113,17 @@ impl<A: Clone + Send + Sync + 'static> Signal<A> {
     /// Combine the signal with a stream in a snapshot.
     ///
     /// `snapshot` creates a new stream given a signal and a stream. Whenever
-    /// the input stream fires an event, the output stream fires a pair of the
-    /// signal's current value and that event.
+    /// the input stream fires an event, the output stream fires an event
+    /// created from the signal's current value and that event using the
+    /// supplied function.
     ///
     /// ```
     /// # use carboxyl::Sink;
     /// let sink1: Sink<i32> = Sink::new();
     /// let sink2: Sink<f64> = Sink::new();
-    /// let snapshot = sink1.stream().hold(1).snapshot(&sink2.stream());
-    /// let mut events = snapshot.events();
+    /// let mut events = sink1.stream().hold(1)
+    ///     .snapshot(&sink2.stream(), |a, b| (a, b))
+    ///     .events();
     ///
     /// // Updating its signal does not cause the snapshot to fire
     /// sink1.send(4);
@@ -129,10 +132,12 @@ impl<A: Clone + Send + Sync + 'static> Signal<A> {
     /// sink2.send(3.0);
     /// assert_eq!(events.next(), Some((4, 3.0)));
     /// ```
-    pub fn snapshot<B>(&self, stream: &Stream<B>) -> Stream<(A, B)>
+    pub fn snapshot<B, C, F>(&self, stream: &Stream<B>, f: F) -> Stream<C>
         where B: Clone + Send + Sync + 'static,
+              C: Clone + Send + Sync + 'static,
+              F: Fn(A, B) -> C + Send + Sync + 'static,
     {
-        stream::snapshot(self, stream)
+        stream::snapshot(self, stream, f)
     }
 }
 
@@ -275,6 +280,105 @@ impl<A> Deref for SignalCycle<A> {
 }
 
 
+/// Signal variant using inner mutability for efficient in-place updates.
+///
+/// This is the only kind of primitive that allows non-`Clone` types to be
+/// wrapped into functional reactive abstractions. The API is somewhat different
+/// from that of a regular signal to accommodate this.
+///
+/// One cannot directly sample a `SignalMut` as this would require a clone.
+/// Instead it comes with a couple of adaptor methods that mimick a subset of
+/// the `Signal` API. However, all functions passed to these methods take the
+/// argument coming from the `SignalMut` by reference.
+pub struct SignalMut<A> {
+    inner: Signal<ReadOnly<A>>,
+}
+
+impl<A: Send + Sync + 'static> SignalMut<A> {
+    /// Semantically the same as `Signal::snapshot`
+    ///
+    /// The key difference here is, that the combining function takes its first
+    /// argument by reference, as it can't be moved out of the `SignalMut`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use carboxyl::Sink;
+    /// let sink1 = Sink::new();
+    /// let sink2 = Sink::new();
+    /// // Collect values in a mutable `Vec`
+    /// let values = sink1.stream().scan_mut(vec![], |v, a| v.push(a));
+    /// // Snapshot some value from it
+    /// let mut index = values.snapshot(&sink2.stream(),
+    ///     |v, k| v.get(k).map(|x| *x)
+    /// ).events();
+    ///
+    /// sink1.send(4);
+    /// sink1.send(5);
+    /// sink2.send(0);
+    /// assert_eq!(index.next(), Some(Some(4)));
+    ///
+    /// sink2.send(1);
+    /// assert_eq!(index.next(), Some(Some(5)));
+    ///
+    /// sink2.send(2);
+    /// assert_eq!(index.next(), Some(None));
+    /// ```
+    pub fn snapshot<B, C, F>(&self, stream: &Stream<B>, f: F) -> Stream<C>
+        where B: Clone + Send + Sync + 'static,
+              C: Clone + Send + Sync + 'static,
+              F: Fn(&A, B) -> C + Send + Sync + 'static,
+    {
+        self.inner.snapshot(stream, move |a, b| f(&a.read().unwrap(), b))
+    }
+
+    /// Similar to `lift2`. Combines a `SignalMut` with a `Signal` using a
+    /// function. The function takes its first argument by reference.
+    pub fn combine<B, C, F>(&self, signal: &Signal<B>, f: F) -> Signal<C>
+        where B: Clone + Send + Sync + 'static,
+              C: Clone + Send + Sync + 'static,
+              F: Fn(&A, B) -> C + Send + Sync + 'static,
+    {
+        lift::lift2(
+            move |a, b| f(&a.read().unwrap(), b),
+            &self.inner, &signal
+        )
+    }
+
+    /// Similar to `lift2`, but combines two `SignalMut` using a function. The
+    /// supplied function takes both arguments by reference.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use carboxyl::Sink;
+    /// let sink: Sink<i32> = Sink::new();
+    /// let sum = sink.stream().scan_mut(0, |sum, a| *sum += a);
+    /// let product = sink.stream().scan_mut(1, |prod, a| *prod *= a);
+    /// let combo = sum.combine_mut(&product, |s, p| (*s, *p));
+    ///
+    /// sink.send(1);
+    /// assert_eq!(combo.sample(), (1, 1));
+    ///
+    /// sink.send(3);
+    /// assert_eq!(combo.sample(), (4, 3));
+    ///
+    /// sink.send(5);
+    /// assert_eq!(combo.sample(), (9, 15));
+    /// ```
+    pub fn combine_mut<B, C, F>(&self, other: &SignalMut<B>, f: F) -> Signal<C>
+        where B: Clone + Send + Sync + 'static,
+              C: Clone + Send + Sync + 'static,
+              F: Fn(&A, &B) -> C + Send + Sync + 'static,
+    {
+        lift::lift2(
+            move |a, b| f(&a.read().unwrap(), &b.read().unwrap()),
+            &self.inner, &other.inner
+        )
+    }
+}
+
+
 /// Hold a stream as a signal.
 pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
     where A: Send + Sync + 'static,
@@ -287,7 +391,7 @@ pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
 }
 
 
-pub fn scan_mut<A, B, F>(stream: &Stream<A>, initial: B, f: F) -> Signal<ReadOnly<B>>
+pub fn scan_mut<A, B, F>(stream: &Stream<A>, initial: B, f: F) -> SignalMut<B>
     where A: Send + Sync + 'static,
           B: Send + Sync + 'static,
           F: Fn(&mut B, A) + Send + Sync + 'static,
@@ -297,7 +401,7 @@ pub fn scan_mut<A, B, F>(stream: &Stream<A>, initial: B, f: F) -> Signal<ReadOnl
         let signal = Signal::build(SignalFn::Const(readonly::create(state.clone())), stream.clone());
         reg_signal(&mut stream::source(&stream).lock().unwrap(), &signal,
             move |a| { f(&mut state.write().unwrap(), a); SignalFn::Const(readonly::create(state.clone())) });
-        signal
+        SignalMut { inner: signal }
     })
 }
 
@@ -336,7 +440,9 @@ mod test {
     fn snapshot() {
         let sink1: Sink<i32> = Sink::new();
         let sink2: Sink<f64> = Sink::new();
-        let mut snap_events = sink1.stream().hold(1).snapshot(&sink2.stream().map(|x| x + 3.0)).events();
+        let mut snap_events = sink1.stream().hold(1)
+            .snapshot(&sink2.stream().map(|x| x + 3.0), |a, b| (a, b))
+            .events();
         sink2.send(4.0);
         assert_eq!(snap_events.next(), Some((1, 7.0)));
     }
@@ -346,7 +452,7 @@ mod test {
         let ev1 = Sink::new();
         let beh1 = ev1.stream().hold(5);
         let ev2 = Sink::new();
-        let snap = beh1.snapshot(&ev2.stream());
+        let snap = beh1.snapshot(&ev2.stream(), |a, b| (a, b));
         let mut events = snap.events();
         ev2.send(4);
         assert_eq!(events.next(), Some((5, 4)));
@@ -360,7 +466,7 @@ mod test {
         let sink = Sink::new();
         let stream = sink.stream();
         let accum = SignalCycle::new();
-        let def = accum.snapshot(&stream).map(|(a, s)| a + s).hold(0);
+        let def = accum.snapshot(&stream, |a, s| a + s).hold(0);
         let accum = accum.define(def);
         assert_eq!(accum.sample(), 0);
         sink.send(3);
@@ -375,7 +481,9 @@ mod test {
     fn snapshot_order_standard() {
         let sink = Sink::new();
         let signal = sink.stream().hold(0);
-        let mut events = signal.snapshot(&sink.stream()).events();
+        let mut events = signal
+            .snapshot(&sink.stream(), |a, b| (a, b))
+            .events();
         sink.send(1);
         assert_eq!(events.next(), Some((0, 1)));
     }
@@ -385,7 +493,7 @@ mod test {
         let sink = Sink::new();
         let signal = sink.stream().hold(0);
         let mut events = lift1(|x| x, &signal)
-            .snapshot(&sink.stream())
+            .snapshot(&sink.stream(), |a, b| (a, b))
             .events();
         sink.send(1);
         assert_eq!(events.next(), Some((0, 1)));
@@ -398,7 +506,7 @@ mod test {
         // the signal, which are both used by the snapshot.
         let first = sink.stream().map(|x| x);
         let signal = sink.stream().hold(0);
-        let mut events = signal.snapshot(&first).events();
+        let mut events = signal.snapshot(&first, |a, b| (a, b)).events();
         sink.send(1);
         assert_eq!(events.next(), Some((0, 1)));
     }
