@@ -112,15 +112,17 @@ impl<A: Clone + Send + Sync + 'static> Signal<A> {
     /// Combine the signal with a stream in a snapshot.
     ///
     /// `snapshot` creates a new stream given a signal and a stream. Whenever
-    /// the input stream fires an event, the output stream fires a pair of the
-    /// signal's current value and that event.
+    /// the input stream fires an event, the output stream fires an event
+    /// created from the signal's current value and that event using the
+    /// supplied function.
     ///
     /// ```
     /// # use carboxyl::Sink;
     /// let sink1: Sink<i32> = Sink::new();
     /// let sink2: Sink<f64> = Sink::new();
-    /// let snapshot = sink1.stream().hold(1).snapshot(&sink2.stream());
-    /// let mut events = snapshot.events();
+    /// let mut events = sink1.stream().hold(1)
+    ///     .snapshot(&sink2.stream(), |a, b| (a, b))
+    ///     .events();
     ///
     /// // Updating its signal does not cause the snapshot to fire
     /// sink1.send(4);
@@ -129,10 +131,12 @@ impl<A: Clone + Send + Sync + 'static> Signal<A> {
     /// sink2.send(3.0);
     /// assert_eq!(events.next(), Some((4, 3.0)));
     /// ```
-    pub fn snapshot<B>(&self, stream: &Stream<B>) -> Stream<(A, B)>
+    pub fn snapshot<B, C, F>(&self, stream: &Stream<B>, f: F) -> Stream<C>
         where B: Clone + Send + Sync + 'static,
+              C: Clone + Send + Sync + 'static,
+              F: Fn(A, B) -> C + Send + Sync + 'static,
     {
-        stream::snapshot(self, stream)
+        stream::snapshot(self, stream, f)
     }
 }
 
@@ -336,7 +340,9 @@ mod test {
     fn snapshot() {
         let sink1: Sink<i32> = Sink::new();
         let sink2: Sink<f64> = Sink::new();
-        let mut snap_events = sink1.stream().hold(1).snapshot(&sink2.stream().map(|x| x + 3.0)).events();
+        let mut snap_events = sink1.stream().hold(1)
+            .snapshot(&sink2.stream().map(|x| x + 3.0), |a, b| (a, b))
+            .events();
         sink2.send(4.0);
         assert_eq!(snap_events.next(), Some((1, 7.0)));
     }
@@ -346,7 +352,7 @@ mod test {
         let ev1 = Sink::new();
         let beh1 = ev1.stream().hold(5);
         let ev2 = Sink::new();
-        let snap = beh1.snapshot(&ev2.stream());
+        let snap = beh1.snapshot(&ev2.stream(), |a, b| (a, b));
         let mut events = snap.events();
         ev2.send(4);
         assert_eq!(events.next(), Some((5, 4)));
@@ -360,7 +366,7 @@ mod test {
         let sink = Sink::new();
         let stream = sink.stream();
         let accum = SignalCycle::new();
-        let def = accum.snapshot(&stream).map(|(a, s)| a + s).hold(0);
+        let def = accum.snapshot(&stream, |a, s| a + s).hold(0);
         let accum = accum.define(def);
         assert_eq!(accum.sample(), 0);
         sink.send(3);
@@ -375,7 +381,9 @@ mod test {
     fn snapshot_order_standard() {
         let sink = Sink::new();
         let signal = sink.stream().hold(0);
-        let mut events = signal.snapshot(&sink.stream()).events();
+        let mut events = signal
+            .snapshot(&sink.stream(), |a, b| (a, b))
+            .events();
         sink.send(1);
         assert_eq!(events.next(), Some((0, 1)));
     }
@@ -385,7 +393,7 @@ mod test {
         let sink = Sink::new();
         let signal = sink.stream().hold(0);
         let mut events = lift1(|x| x, &signal)
-            .snapshot(&sink.stream())
+            .snapshot(&sink.stream(), |a, b| (a, b))
             .events();
         sink.send(1);
         assert_eq!(events.next(), Some((0, 1)));
@@ -398,7 +406,7 @@ mod test {
         // the signal, which are both used by the snapshot.
         let first = sink.stream().map(|x| x);
         let signal = sink.stream().hold(0);
-        let mut events = signal.snapshot(&first).events();
+        let mut events = signal.snapshot(&first, |a, b| (a, b)).events();
         sink.send(1);
         assert_eq!(events.next(), Some((0, 1)));
     }

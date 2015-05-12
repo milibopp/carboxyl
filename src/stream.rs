@@ -312,7 +312,7 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
               F: Fn(B, A) -> B + Send + Sync + 'static,
     {
         let scan = SignalCycle::new();
-        let def = scan.snapshot(self).map(move |(a, b)| f(a, b)).hold(initial);
+        let def = scan.snapshot(self, f).hold(initial);
         scan.define(def)
     }
 
@@ -445,16 +445,18 @@ impl<A: Send + Sync + Clone + 'static> Stream<Stream<A>> {
 
 
 /// Make a snapshot of a signal, whenever a stream fires an event.
-pub fn snapshot<A, B>(signal: &Signal<A>, stream: &Stream<B>) -> Stream<(A, B)>
+pub fn snapshot<A, B, C, F>(signal: &Signal<A>, stream: &Stream<B>, f: F) -> Stream<C>
     where A: Clone + Send + Sync + 'static,
           B: Clone + Send + Sync + 'static,
+          C: Clone + Send + Sync + 'static,
+          F: Fn(A, B) -> C + Send + Sync + 'static,
 {
     commit((), |_| {
         let src = Arc::new(Mutex::new(Source::new()));
         let weak = src.downgrade();
         stream.source.lock().unwrap().register({
             let signal = signal.clone();
-            move |b| with_weak(&weak, |src| src.send((signal.sample(), b)))
+            move |b| with_weak(&weak, |src| src.send(f(signal.sample(), b)))
         });
         Stream {
             source: src,
