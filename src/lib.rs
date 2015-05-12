@@ -144,7 +144,6 @@ extern crate lazy_static;
 
 pub use stream::{ Sink, Stream };
 pub use signal::{ Signal, SignalMut, SignalCycle };
-pub use readonly::{ ReadOnly, ReadOnlyGuard };
 
 mod transaction;
 mod source;
