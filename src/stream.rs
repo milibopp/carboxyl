@@ -1,6 +1,6 @@
 //! Streams of discrete events
 
-use std::sync::{ Arc, Mutex, Weak };
+use std::sync::{ Arc, RwLock, Mutex, Weak };
 use std::sync::mpsc::{ Receiver, channel };
 use std::thread;
 use source::{ Source, CallbackError, CallbackResult, with_weak };
@@ -60,7 +60,7 @@ use transaction::commit;
 /// the iterator. However, any event sent into the sink after a call to it, may
 /// come at any point between the iterator events.
 pub struct Sink<A> {
-    source: Arc<Mutex<Source<A>>>,
+    source: Arc<RwLock<Source<A>>>,
 }
 
 impl<A> Clone for Sink<A> {
@@ -72,7 +72,7 @@ impl<A> Clone for Sink<A> {
 impl<A: Send + Sync> Sink<A> {
     /// Create a new sink.
     pub fn new() -> Sink<A> {
-        Sink { source: Arc::new(Mutex::new(Source::new())) }
+        Sink { source: Arc::new(RwLock::new(Source::new())) }
     }
 
     /// Generate a stream that fires all events sent into the sink.
@@ -115,7 +115,7 @@ impl<A: Send + Sync + Clone + 'static> Sink<A> {
     /// When a value is sent into the sink, an event is fired in all dependent
     /// streams.
     pub fn send(&self, a: A) {
-        commit((), |_| self.source.lock().unwrap().send(a))
+        commit((), |_| self.source.write().unwrap().send(a))
     }
 }
 
@@ -137,7 +137,7 @@ impl<T: Sync + Send + Clone + 'static> BoxClone for T {
 ///
 /// This is not defined as a method, so that it can be public to other modules
 /// in this crate while being private outside the crate.
-pub fn source<A>(stream: &Stream<A>) -> &Arc<Mutex<Source<A>>> {
+pub fn source<A>(stream: &Stream<A>) -> &Arc<RwLock<Source<A>>> {
     &stream.source
 }
 
@@ -146,7 +146,7 @@ pub fn source<A>(stream: &Stream<A>) -> &Arc<Mutex<Source<A>>> {
 ///
 /// This occasionally fires an event of type `A`.
 pub struct Stream<A> {
-    source: Arc<Mutex<Source<A>>>,
+    source: Arc<RwLock<Source<A>>>,
     #[allow(dead_code)]
     keep_alive: Box<BoxClone>,
 }
@@ -166,7 +166,7 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
     /// expected.
     pub fn never() -> Stream<A> {
         Stream {
-            source: Arc::new(Mutex::new(Source::new())),
+            source: Arc::new(RwLock::new(Source::new())),
             keep_alive: Box::new(()) 
         }
     }
@@ -188,9 +188,9 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
               F: Fn(A) -> B + Send + Sync + 'static,
     {
         commit((), |_| {
-            let src = Arc::new(Mutex::new(Source::new()));
+            let src = Arc::new(RwLock::new(Source::new()));
             let weak = src.downgrade();
-            self.source.lock().unwrap()
+            self.source.write().unwrap()
                 .register(move |a| with_weak(&weak, |src| src.send(f(a))));
             Stream {
                 source: src,
@@ -258,10 +258,10 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
     /// ```
     pub fn merge(&self, other: &Stream<A>) -> Stream<A> {
         commit((), |_| {
-            let src = Arc::new(Mutex::new(Source::new()));
+            let src = Arc::new(RwLock::new(Source::new()));
             for parent in [self, other].iter() {
                 let weak = src.downgrade();
-                parent.source.lock().unwrap()
+                parent.source.write().unwrap()
                     .register(move |a| with_weak(&weak, |src| src.send(a)));
             }
             Stream {
@@ -362,9 +362,9 @@ impl<A: Clone + Send + Sync + 'static> Stream<Option<A>> {
     /// ```
     pub fn filter_some(&self) -> Stream<A> {
         commit((), |_| {
-            let src = Arc::new(Mutex::new(Source::new()));
+            let src = Arc::new(RwLock::new(Source::new()));
             let weak = src.downgrade();
-            self.source.lock().unwrap()
+            self.source.write().unwrap()
                 .register(move |a| a.map_or(
                     Ok(()),
                     |a| with_weak(&weak, |src| src.send(a))
@@ -410,28 +410,26 @@ impl<A: Send + Sync + Clone + 'static> Stream<Stream<A>> {
     /// assert_eq!(events.next(), Some(5));
     /// ```
     pub fn switch(&self) -> Stream<A> {
-        use std::sync::mpsc::{ channel, TryRecvError, Sender };
-        fn rewire_callbacks<A>(new_stream: Stream<A>, source: Weak<Mutex<Source<A>>>,
-                               terminate: &Mutex<Option<Sender<()>>>)
+        fn rewire_callbacks<A>(new_stream: Stream<A>, source: Weak<RwLock<Source<A>>>,
+                               terminate: &mut Arc<()>)
             -> CallbackResult
             where A: Send + Sync + Clone + 'static,
         {
-            let (tx, rx) = channel::<()>();
-            *terminate.lock().unwrap() = Some(tx);
-            new_stream.source.lock().unwrap().register(move |a|
-                match rx.try_recv() {
-                    Err(TryRecvError::Disconnected) => Err(CallbackError::Disappeared),
-                    _ => Ok(()),
-                }.and_then(|_| with_weak(&source, |src| src.send(a)))
+            *terminate = Arc::new(());
+            let weak = terminate.downgrade();
+            new_stream.source.write().unwrap().register(move |a|
+                weak.upgrade()
+                    .ok_or(CallbackError::Disappeared)
+                    .and_then(|_| with_weak(&source, |src| src.send(a)))
             );
             Ok(())
         }
         commit((), |_| {
-            let src = Arc::new(Mutex::new(Source::new()));
+            let src = Arc::new(RwLock::new(Source::new()));
             let weak = src.downgrade();
-            self.source.lock().unwrap().register({
-                let terminate = Mutex::new(None);
-                move |stream| rewire_callbacks(stream, weak.clone(), &terminate)
+            self.source.write().unwrap().register({
+                let mut terminate = Arc::new(());
+                move |stream| rewire_callbacks(stream, weak.clone(), &mut terminate)
             });
             Stream {
                 source: src,
@@ -450,9 +448,9 @@ pub fn snapshot<A, B, C, F>(signal: &Signal<A>, stream: &Stream<B>, f: F) -> Str
           F: Fn(A, B) -> C + Send + Sync + 'static,
 {
     commit((), |_| {
-        let src = Arc::new(Mutex::new(Source::new()));
+        let src = Arc::new(RwLock::new(Source::new()));
         let weak = src.downgrade();
-        stream.source.lock().unwrap().register({
+        stream.source.write().unwrap().register({
             let signal = signal.clone();
             move |b| with_weak(&weak, |src| src.send(f(signal.sample(), b)))
         });
@@ -476,8 +474,9 @@ impl<A: Send + Sync + 'static> Events<A> {
     fn new(stream: &Stream<A>) -> Events<A> {
         commit((), |_| {
             let (tx, rx) = channel();
-            stream.source.lock().unwrap().register(
-                move |a| tx.send(a).map_err(|_| CallbackError::Disappeared)
+            let tx = Mutex::new(tx);
+            stream.source.write().unwrap().register(
+                move |a| tx.lock().unwrap().send(a).map_err(|_| CallbackError::Disappeared)
             );
             Events {
                 receiver: rx,
