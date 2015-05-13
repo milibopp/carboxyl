@@ -155,3 +155,5 @@ mod stream;
 mod signal;
 #[macro_use]
 pub mod lift;
+#[cfg(test)]
+mod testing;
