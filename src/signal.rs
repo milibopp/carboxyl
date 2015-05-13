@@ -1,6 +1,6 @@
 //! Continuous time signals
 
-use std::sync::{ Arc, Mutex, RwLock };
+use std::sync::{ Arc, RwLock };
 use std::ops::Deref;
 use source::{ Source, with_weak, CallbackError };
 use stream::{ self, BoxClone, Stream };
@@ -41,7 +41,7 @@ pub fn reg_signal<A, B, F>(parent_source: &mut Source<A>, signal: &Signal<B>, ha
     let weak_current = signal.current.downgrade();
     parent_source.register(move |a|
         weak_current.upgrade().map(|cur| register_callback(
-            move || { let _ = cur.lock().map(|mut cur| cur.update()); }))
+            move || { let _ = cur.write().map(|mut cur| cur.update()); }))
             .ok_or(CallbackError::Disappeared)
         .and(with_weak(&weak_current, |cur| cur.queue(handler(a))))
         .and(with_weak(&weak_source, |src| src.send(())))
@@ -57,20 +57,20 @@ pub fn signal_build<A, K>(func: SignalFn<A>, keep_alive: K) -> Signal<A>
 }
 
 /// External accessor to current state of a signal.
-pub fn signal_current<A>(signal: &Signal<A>) -> &Arc<Mutex<Pending<SignalFn<A>>>> {
+pub fn signal_current<A>(signal: &Signal<A>) -> &Arc<RwLock<Pending<SignalFn<A>>>> {
     &signal.current
 }
 
 /// External accessor to signal source.
-pub fn signal_source<A>(signal: &Signal<A>) -> &Arc<Mutex<Source<()>>> {
+pub fn signal_source<A>(signal: &Signal<A>) -> &Arc<RwLock<Source<()>>> {
     &signal.source
 }
 
 
 /// A continuous signal that changes over time.
 pub struct Signal<A> {
-    current: Arc<Mutex<Pending<SignalFn<A>>>>,
-    source: Arc<Mutex<Source<()>>>,
+    current: Arc<RwLock<Pending<SignalFn<A>>>>,
+    source: Arc<RwLock<Source<()>>>,
     #[allow(dead_code)]
     keep_alive: Box<BoxClone>,
 }
@@ -90,8 +90,8 @@ impl<A> Signal<A> {
         where K: Send + Sync + Clone + 'static
     {
         Signal {
-            current: Arc::new(Mutex::new(Pending::new(func))),
-            source: Arc::new(Mutex::new(Source::new())),
+            current: Arc::new(RwLock::new(Pending::new(func))),
+            source: Arc::new(RwLock::new(Source::new())),
             keep_alive: Box::new(keep_alive),
         }
     }
@@ -105,7 +105,7 @@ impl<A: Clone> Signal<A> {
 
     /// Sample the current value of the signal.
     pub fn sample(&self) -> A {
-        commit((), |_| self.current.lock().unwrap().call())
+        commit((), |_| self.current.read().unwrap().call())
     }
 }
 
@@ -217,13 +217,13 @@ impl<A: Clone + Send + Sync + 'static> Signal<Signal<A>> {
             // TODO: use information on inner value
             let current_signal = parent.current.clone();
             SignalFn::from_fn(move ||
-                current_signal.lock().unwrap().call().sample()
+                current_signal.read().unwrap().call().sample()
             )
         }
         commit((), |_| {
             let signal = Signal::build(make_callback(self), ());
             let parent = self.clone();
-            reg_signal(&mut self.source.lock().unwrap(), &signal,
+            reg_signal(&mut self.source.write().unwrap(), &signal,
                 move |_| make_callback(&parent));
             signal
         })
@@ -249,25 +249,25 @@ impl<A: Send + Sync + Clone + 'static> SignalCycle<A> {
     /// Provide the signal with a definition.
     pub fn define(self, definition: Signal<A>) -> Signal<A> {
         /// Generate a callback from the signal definition's current value.
-        fn make_callback<A>(current_def: &Arc<Mutex<Pending<SignalFn<A>>>>) -> SignalFn<A>
+        fn make_callback<A>(current_def: &Arc<RwLock<Pending<SignalFn<A>>>>) -> SignalFn<A>
             where A: Send + Sync + Clone + 'static
         {
-            match *current_def.lock().unwrap().future() {
+            match *current_def.read().unwrap().future() {
                 SignalFn::Const(ref a) => SignalFn::Const(a.clone()),
                 SignalFn::Func(_) => SignalFn::from_fn({
                     let sig = current_def.downgrade();
                     move || {
                         let strong = sig.upgrade().unwrap();
-                        let ret = strong.lock().unwrap().call();
+                        let ret = strong.read().unwrap().call();
                         ret
                     }
                 }),
             }
         }
         commit((), move |_| {
-            *self.signal.current.lock().unwrap() = Pending::new(make_callback(&definition.current));
+            *self.signal.current.write().unwrap() = Pending::new(make_callback(&definition.current));
             let weak_parent = definition.current.downgrade();
-            reg_signal(&mut definition.source.lock().unwrap(), &self.signal,
+            reg_signal(&mut definition.source.write().unwrap(), &self.signal,
                 move |_| make_callback(&weak_parent.upgrade().unwrap()));
             Signal { keep_alive: Box::new(definition), ..self.signal }
         })
@@ -385,7 +385,7 @@ pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
 {
     commit((), |_| {
         let signal = Signal::build(SignalFn::Const(initial), stream.clone());
-        reg_signal(&mut stream::source(&stream).lock().unwrap(), &signal, SignalFn::Const);
+        reg_signal(&mut stream::source(&stream).write().unwrap(), &signal, SignalFn::Const);
         signal
     })
 }
@@ -399,7 +399,7 @@ pub fn scan_mut<A, B, F>(stream: &Stream<A>, initial: B, f: F) -> SignalMut<B>
     commit((), move |_| {
         let state = Arc::new(RwLock::new(initial));
         let signal = Signal::build(SignalFn::Const(readonly::create(state.clone())), stream.clone());
-        reg_signal(&mut stream::source(&stream).lock().unwrap(), &signal,
+        reg_signal(&mut stream::source(&stream).write().unwrap(), &signal,
             move |a| { f(&mut state.write().unwrap(), a); SignalFn::Const(readonly::create(state.clone())) });
         SignalMut { inner: signal }
     })

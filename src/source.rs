@@ -3,7 +3,7 @@
 //! This is a light-weight implementation of the observer pattern. Subjects are
 //! modelled as the `Source` type and observers as boxed closures.
 
-use std::sync::{ Mutex, Weak };
+use std::sync::{ RwLock, Weak };
 
 /// An error that can occur with a weakly referenced callback.
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
@@ -16,15 +16,15 @@ pub enum CallbackError {
 pub type CallbackResult<T=()> = Result<T, CallbackError>;
 
 /// A boxed callback.
-type Callback<A> = Box<FnMut(A) -> CallbackResult + Send + 'static>;
+type Callback<A> = Box<FnMut(A) -> CallbackResult + Send + Sync + 'static>;
 
 
 /// Perform some callback on a weak reference to a mutex and handle errors
 /// gracefully.
-pub fn with_weak<T, U, F: FnOnce(&mut T) -> U>(weak: &Weak<Mutex<T>>, f: F) -> CallbackResult<U> {
+pub fn with_weak<T, U, F: FnOnce(&mut T) -> U>(weak: &Weak<RwLock<T>>, f: F) -> CallbackResult<U> {
     weak.upgrade()
         .ok_or(CallbackError::Disappeared)
-        .and_then(|mutex| mutex.lock()
+        .and_then(|mutex| mutex.write()
             .map(|mut t| f(&mut t))
             .map_err(|_| CallbackError::Poisoned)
         )
@@ -46,7 +46,7 @@ impl<A> Source<A> {
     /// an event and must return a result. To unsubscribe from further events,
     /// the callback has to return an error.
     pub fn register<F>(&mut self, callback: F)
-        where F: FnMut(A) -> CallbackResult + Send + 'static
+        where F: FnMut(A) -> CallbackResult + Send + Sync + 'static
     {
         self.callbacks.push(Box::new(callback));
     }
@@ -74,31 +74,31 @@ impl<A: Send + Sync + Clone + 'static> Source<A> {
 
 #[cfg(test)]
 mod test {
-    use std::sync::{ Arc, Mutex };
+    use std::sync::{ Arc, RwLock };
     use std::thread;
     use super::*;
 
     #[test]
     fn with_weak_no_error() {
-        let a = Arc::new(Mutex::new(3));
+        let a = Arc::new(RwLock::new(3));
         let weak = a.downgrade();
         assert_eq!(with_weak(&weak, |a| { *a = 4; }), Ok(()));
-        assert_eq!(*a.lock().unwrap(), 4);
+        assert_eq!(*a.read().unwrap(), 4);
     }
 
     #[test]
     fn with_weak_disappeared() {
-        let weak = Arc::new(Mutex::new(3)).downgrade();
+        let weak = Arc::new(RwLock::new(3)).downgrade();
         assert_eq!(with_weak(&weak, |_| ()), Err(CallbackError::Disappeared));
     }
 
     #[test]
     fn with_weak_poisoned() {
-        let a = Arc::new(Mutex::new(3));
+        let a = Arc::new(RwLock::new(3));
         let a2 = a.clone();
         let weak = a.downgrade();
         let _ = thread::spawn(move || {
-            let _g = a2.lock().unwrap();
+            let _g = a2.write().unwrap();
             panic!();
         }).join();
         assert_eq!(with_weak(&weak, |_| ()), Err(CallbackError::Poisoned));
@@ -107,17 +107,17 @@ mod test {
     #[test]
     fn source_register_and_send() {
         let mut src = Source::new();
-        let a = Arc::new(Mutex::new(3));
+        let a = Arc::new(RwLock::new(3));
         {
             let a = a.clone();
             src.register(move |x| {
-                *a.lock().unwrap() = x;
+                *a.write().unwrap() = x;
                 Ok(())
             });
         }
         assert_eq!(src.callbacks.len(), 1);
         src.send(4);
-        assert_eq!(*a.lock().unwrap(), 4);
+        assert_eq!(*a.read().unwrap(), 4);
     }
 
     #[test]
