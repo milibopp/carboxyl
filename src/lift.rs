@@ -74,7 +74,7 @@ pub fn lift1<A, B, F>(f: F, sa: &Signal<A>) -> Signal<B>
     {
         let pclone = parent.clone();
         let f = f.clone();
-        match *signal_current(&parent).lock().unwrap().future() {
+        match *signal_current(&parent).read().unwrap().future() {
             SignalFn::Const(ref a) => SignalFn::Const(f(a.clone())),
             SignalFn::Func(_) => SignalFn::from_fn(move || f(pclone.sample())),
         }
@@ -83,7 +83,7 @@ pub fn lift1<A, B, F>(f: F, sa: &Signal<A>) -> Signal<B>
     let f = Arc::new(f);
     let signal = signal_build(make_callback(&f, &sa), ());
     let sa_clone = sa.clone();
-    reg_signal(&mut signal_source(&sa).lock().unwrap(), &signal,
+    reg_signal(&mut signal_source(&sa).write().unwrap(), &signal,
         move |_| make_callback(&f, &sa_clone));
     signal
 }
@@ -106,7 +106,10 @@ pub fn lift2<A, B, C, F>(f: F, sa: &Signal<A>, sb: &Signal<B>) -> Signal<C>
         let sa_clone = sa.clone();
         let sb_clone = sb.clone();
         let f = f.clone();
-        match (signal_current(&sa).lock().unwrap().future(), signal_current(&sb).lock().unwrap().future()) {
+        match (
+            signal_current(&sa).read().unwrap().future(),
+            signal_current(&sb).read().unwrap().future(),
+        ) {
             (&Const(ref a), &Const(ref b)) => Const(f(a.clone(), b.clone())),
             (&Const(ref a), &Func(_)) => {
                 let a = a.clone();
@@ -124,13 +127,13 @@ pub fn lift2<A, B, C, F>(f: F, sa: &Signal<A>, sb: &Signal<B>) -> Signal<C>
 
     let f = Arc::new(f);
     let signal = signal_build(make_callback(&f, &sa, &sb), ());
-    reg_signal(&mut signal_source(&sa).lock().unwrap(), &signal, {
+    reg_signal(&mut signal_source(&sa).write().unwrap(), &signal, {
         let sa_clone = sa.clone();
         let sb_clone = sb.clone();
         let f = f.clone();
         move |_| make_callback(&f, &sa_clone, &sb_clone)
     });
-    reg_signal(&mut signal_source(&sb).lock().unwrap(), &signal, {
+    reg_signal(&mut signal_source(&sb).write().unwrap(), &signal, {
         let sa_clone = sa.clone();
         let sb_clone = sb.clone();
         move |_| make_callback(&f, &sa_clone, &sb_clone)
@@ -196,6 +199,13 @@ mod test {
         assert_eq!(lifted.sample(), 4);
         sink2.send(11);
         assert_eq!(lifted.sample(), 12);
+    }
+
+    #[test]
+    fn lift2_identical() {
+        let sig = Signal::new(16);
+        let sig2 = lift!(|a, b| a + b, &sig, &sig);
+        assert_eq!(sig2.sample(), 32);
     }
 
     #[test]
