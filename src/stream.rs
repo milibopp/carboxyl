@@ -115,7 +115,7 @@ impl<A: Send + Sync + Clone + 'static> Sink<A> {
     /// When a value is sent into the sink, an event is fired in all dependent
     /// streams.
     pub fn send(&self, a: A) {
-        commit((), |_| self.source.write().unwrap().send(a))
+        commit(|| self.source.write().unwrap().send(a))
     }
 }
 
@@ -187,7 +187,7 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
         where B: Send + Sync + Clone + 'static,
               F: Fn(A) -> B + Send + Sync + 'static,
     {
-        commit((), |_| {
+        commit(|| {
             let src = Arc::new(RwLock::new(Source::new()));
             let weak = src.downgrade();
             self.source.write().unwrap()
@@ -257,7 +257,7 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
     /// assert_eq!(events.next(), Some(4));
     /// ```
     pub fn merge(&self, other: &Stream<A>) -> Stream<A> {
-        commit((), |_| {
+        commit(|| {
             let src = Arc::new(RwLock::new(Source::new()));
             for parent in [self, other].iter() {
                 let weak = src.downgrade();
@@ -361,7 +361,7 @@ impl<A: Clone + Send + Sync + 'static> Stream<Option<A>> {
     /// assert_eq!(events.next(), Some(5));
     /// ```
     pub fn filter_some(&self) -> Stream<A> {
-        commit((), |_| {
+        commit(|| {
             let src = Arc::new(RwLock::new(Source::new()));
             let weak = src.downgrade();
             self.source.write().unwrap()
@@ -424,7 +424,7 @@ impl<A: Send + Sync + Clone + 'static> Stream<Stream<A>> {
             );
             Ok(())
         }
-        commit((), |_| {
+        commit(|| {
             let src = Arc::new(RwLock::new(Source::new()));
             let weak = src.downgrade();
             self.source.write().unwrap().register({
@@ -447,7 +447,7 @@ pub fn snapshot<A, B, C, F>(signal: &Signal<A>, stream: &Stream<B>, f: F) -> Str
           C: Clone + Send + Sync + 'static,
           F: Fn(A, B) -> C + Send + Sync + 'static,
 {
-    commit((), |_| {
+    commit(|| {
         let src = Arc::new(RwLock::new(Source::new()));
         let weak = src.downgrade();
         stream.source.write().unwrap().register({
@@ -472,7 +472,7 @@ pub struct Events<A> {
 impl<A: Send + Sync + 'static> Events<A> {
     /// Create a new events iterator.
     fn new(stream: &Stream<A>) -> Events<A> {
-        commit((), |_| {
+        commit(|| {
             let (tx, rx) = channel();
             let tx = Mutex::new(tx);
             stream.source.write().unwrap().register(
