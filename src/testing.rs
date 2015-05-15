@@ -3,6 +3,10 @@
 use signal::Signal;
 
 
+/// The identity function.
+pub fn id<T>(t: T) -> T { t }
+
+
 /// Trace equality of two signals.
 pub fn signal_eq<T>(a: &Signal<T>, b: &Signal<T>) -> Signal<bool>
     where T: PartialEq + Clone + Send + Sync + 'static
