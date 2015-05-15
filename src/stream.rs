@@ -5,7 +5,7 @@ use std::sync::mpsc::{ Receiver, channel };
 use std::thread;
 use source::{ Source, CallbackError, CallbackResult, with_weak };
 use signal::{ self, Signal, SignalMut, SignalCycle };
-use transaction::commit;
+use transaction::{ register_callback, commit };
 
 
 /// An event sink.
@@ -268,6 +268,41 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
                 source: src,
                 keep_alive: Box::new((self.clone(), other.clone())),
             }
+        })
+    }
+
+    /// Coalesce multiple event firings within the same transaction into a
+    /// single event.
+    ///
+    /// The function should ideally commute, as the order of events within a
+    /// transaction is not well-defined.
+    pub fn coalesce<F>(&self, f: F) -> Stream<A>
+        where F: Fn(A, A) -> A + Send + Sync + 'static,
+    {
+        commit(|| {
+            let src = Arc::new(RwLock::new(Source::new()));
+            let weak = src.downgrade();
+            self.source.write().unwrap().register({
+                let mutex = Arc::new(Mutex::new(None));
+                move |a| {
+                    let mut inner = mutex.lock().unwrap();
+                    *inner = Some(match inner.take() {
+                        Some(b) => f(a, b),
+                        None => a,
+                    });
+                    // Set at the end of the transaction
+                    register_callback({
+                        let mutex = mutex.clone();
+                        let weak = weak.clone();
+                        move || {
+                            let _ = mutex.lock().unwrap().as_ref()
+                                .map(|value| with_weak(&weak, |src| src.send(value.clone())));
+                        }
+                    });
+                    Ok(())
+                }
+            });
+            Stream { source: src, keep_alive: Box::new(self.clone()) }
         })
     }
 
@@ -597,5 +632,17 @@ mod test {
         for (n, m) in events.take(10).enumerate() {
             assert_eq!(n as i32, m);
         }
+    }
+
+    #[test]
+    fn coalesce() {
+        let sink = Sink::new();
+        let stream = sink.stream()
+            .merge(&sink.stream())
+            .coalesce(|a, b| a + b);
+        let mut events = stream.events();
+
+        sink.send(1);
+        assert_eq!(events.next(), Some(2));
     }
 }
