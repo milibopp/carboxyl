@@ -139,6 +139,8 @@
 
 #[cfg(test)]
 extern crate test;
+#[cfg(test)]
+extern crate rand;
 #[macro_use(lazy_static)]
 extern crate lazy_static;
 
