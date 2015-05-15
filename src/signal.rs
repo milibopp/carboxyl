@@ -105,7 +105,7 @@ impl<A: Clone> Signal<A> {
 
     /// Sample the current value of the signal.
     pub fn sample(&self) -> A {
-        commit((), |_| self.current.read().unwrap().call())
+        commit(|| self.current.read().unwrap().call())
     }
 }
 
@@ -220,7 +220,7 @@ impl<A: Clone + Send + Sync + 'static> Signal<Signal<A>> {
                 current_signal.read().unwrap().call().sample()
             )
         }
-        commit((), |_| {
+        commit(|| {
             let signal = Signal::build(make_callback(self), ());
             let parent = self.clone();
             reg_signal(&mut self.source.write().unwrap(), &signal,
@@ -264,7 +264,7 @@ impl<A: Send + Sync + Clone + 'static> SignalCycle<A> {
                 }),
             }
         }
-        commit((), move |_| {
+        commit(move || {
             *self.signal.current.write().unwrap() = Pending::new(make_callback(&definition.current));
             let weak_parent = definition.current.downgrade();
             reg_signal(&mut definition.source.write().unwrap(), &self.signal,
@@ -383,7 +383,7 @@ impl<A: Send + Sync + 'static> SignalMut<A> {
 pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
     where A: Send + Sync + 'static,
 {
-    commit((), |_| {
+    commit(|| {
         let signal = Signal::build(SignalFn::Const(initial), stream.clone());
         reg_signal(&mut stream::source(&stream).write().unwrap(), &signal, SignalFn::Const);
         signal
@@ -396,7 +396,7 @@ pub fn scan_mut<A, B, F>(stream: &Stream<A>, initial: B, f: F) -> SignalMut<B>
           B: Send + Sync + 'static,
           F: Fn(&mut B, A) + Send + Sync + 'static,
 {
-    commit((), move |_| {
+    commit(move || {
         let state = Arc::new(RwLock::new(initial));
         let signal = Signal::build(SignalFn::Const(readonly::create(state.clone())), stream.clone());
         reg_signal(&mut stream::source(&stream).write().unwrap(), &signal,

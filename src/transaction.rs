@@ -49,7 +49,7 @@ impl Transaction {
 /// If the thread is not running any transactions currently, the global lock is
 /// acquired. Otherwise a new transaction begins, since given the interface of
 /// this module it is safely assumed that the lock is already held.
-pub fn commit<A, B, F: FnOnce(A) -> B>(args: A, transaction: F) -> B {
+pub fn commit<A, F: FnOnce() -> A>(transaction: F) -> A {
     use std::mem;
     // Begin a new transaction
     let mut prev = CURRENT_TRANSACTION.with(|current| {
@@ -65,7 +65,7 @@ pub fn commit<A, B, F: FnOnce(A) -> B>(args: A, transaction: F) -> B {
         Some(_) => None,
     };
     // Perform the transaction
-    let result = transaction(args);
+    let result = transaction();
     // Call all finalizers and drop the transaction
     CURRENT_TRANSACTION.with(move |current| {
         mem::swap(&mut prev, &mut current.borrow_mut());
@@ -94,15 +94,15 @@ mod test {
     #[test]
     fn commit_single() {
         let mut v = 3;
-        commit((), |_| v += 5);
+        commit(|| v += 5);
         assert_eq!(v, 8);
     }
 
     #[test]
     fn commit_nested() {
         let mut v = 3;
-        commit((), |_| {
-            commit((), |_| v *= 2);
+        commit(|| {
+            commit(|| v *= 2);
             v += 4;
         });
         assert_eq!(v, 10);
@@ -119,7 +119,7 @@ mod test {
         let guards: Vec<_> = (0..3)
             .map(|_| {
                 let v = v.clone();
-                thread::spawn(move || commit((), move |_| {
+                thread::spawn(move || commit(move || {
                     // Acquire locks independently, s.t. commit atomicity does
                     // not rely on the local locks here
                     *v.lock().unwrap() *= 2;
