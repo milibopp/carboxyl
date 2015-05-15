@@ -1,6 +1,6 @@
 //! Continuous time signals
 
-use std::sync::{ Arc, RwLock };
+use std::sync::{ Arc, Mutex, RwLock };
 use std::ops::Deref;
 use source::{ Source, with_weak, CallbackError };
 use stream::{ self, BoxClone, Stream };
@@ -10,22 +10,57 @@ use readonly::{ self, ReadOnly };
 use lift;
 
 
+/// A functional signal. Caches its return value during a transaction.
+struct FuncSignal<A> {
+    func: Box<Fn() -> A + Send + Sync + 'static>,
+    cache: Arc<Mutex<Option<A>>>,
+}
+
+impl<A> FuncSignal<A> {
+    pub fn new<F: Fn() -> A + Send + Sync + 'static>(f: F) -> FuncSignal<A> {
+        FuncSignal {
+            func: Box::new(f),
+            cache: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
+impl<A: Clone + 'static> FuncSignal<A> {
+    /// Call the function or fetch the cached value if present.
+    pub fn call(&self) -> A {
+        let mut cached = self.cache.lock().unwrap();
+        match &mut *cached {
+            &mut Some(ref value) => value.clone(),
+            cached => {
+                // Register callback to reset cache at the end of the transaction
+                let cache = self.cache.clone();
+                register_callback(move || *cache.lock().unwrap() = None);
+                // Calculate & cache value
+                let value = (self.func)();
+                *cached = Some(value.clone());
+                value
+            },
+        }
+    }
+}
+
+
 pub enum SignalFn<A> {
     Const(A),
-    Func(Box<Fn() -> A + Send + Sync + 'static>),
+    Func(FuncSignal<A>),
 }
 
 impl<A> SignalFn<A> {
     pub fn from_fn<F: Fn() -> A + Send + Sync + 'static>(f: F) -> SignalFn<A> {
-        SignalFn::Func(Box::new(f))
+        SignalFn::Func(FuncSignal::new(f))
     }
 }
 
-impl<A: Clone> SignalFn<A> {
+impl<A: Clone + 'static> SignalFn<A> {
     pub fn call(&self) -> A {
         match *self {
             SignalFn::Const(ref a) => a.clone(),
-            SignalFn::Func(ref f) => f(),
+            SignalFn::Func(ref f) => f.call(),
         }
     }
 }
@@ -66,6 +101,11 @@ pub fn signal_source<A>(signal: &Signal<A>) -> &Arc<RwLock<Source<()>>> {
     &signal.source
 }
 
+/// Sample the value of the signal without committing it as a transaction.
+pub fn sample_raw<A: Clone + 'static>(signal: &Signal<A>) -> A {
+    signal.current.read().unwrap().call()
+}
+
 
 /// A continuous signal that changes over time.
 pub struct Signal<A> {
@@ -97,7 +137,7 @@ impl<A> Signal<A> {
     }
 }
 
-impl<A: Clone> Signal<A> {
+impl<A: Clone + 'static> Signal<A> {
     /// Create a constant signal.
     pub fn new(a: A) -> Signal<A> {
         Signal::build(SignalFn::Const(a), ())
@@ -105,7 +145,7 @@ impl<A: Clone> Signal<A> {
 
     /// Sample the current value of the signal.
     pub fn sample(&self) -> A {
-        commit(|| self.current.read().unwrap().call())
+        commit(|| sample_raw(self))
     }
 }
 
@@ -217,7 +257,7 @@ impl<A: Clone + Send + Sync + 'static> Signal<Signal<A>> {
             // TODO: use information on inner value
             let current_signal = parent.current.clone();
             SignalFn::from_fn(move ||
-                current_signal.read().unwrap().call().sample()
+                sample_raw(&current_signal.read().unwrap().call())
             )
         }
         commit(|| {

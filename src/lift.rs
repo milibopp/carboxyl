@@ -31,7 +31,7 @@
 //! ```
 
 use std::sync::Arc;
-use signal::{ Signal, SignalFn, signal_build, signal_current, signal_source, reg_signal };
+use signal::{ Signal, SignalFn, signal_build, signal_current, signal_source, reg_signal, sample_raw };
 use transaction::commit;
 
 
@@ -77,7 +77,7 @@ pub fn lift1<A, B, F>(f: F, sa: &Signal<A>) -> Signal<B>
         let f = f.clone();
         match *signal_current(&parent).read().unwrap().future() {
             SignalFn::Const(ref a) => SignalFn::Const(f(a.clone())),
-            SignalFn::Func(_) => SignalFn::from_fn(move || f(pclone.sample())),
+            SignalFn::Func(_) => SignalFn::from_fn(move || f(sample_raw(&pclone))),
         }
     }
 
@@ -116,14 +116,14 @@ pub fn lift2<A, B, C, F>(f: F, sa: &Signal<A>, sb: &Signal<B>) -> Signal<C>
             (&Const(ref a), &Const(ref b)) => Const(f(a.clone(), b.clone())),
             (&Const(ref a), &Func(_)) => {
                 let a = a.clone();
-                SignalFn::from_fn(move || f(a.clone(), sb_clone.sample()))
+                SignalFn::from_fn(move || f(a.clone(), sample_raw(&sb_clone)))
             },
             (&Func(_), &Const(ref b)) => {
                 let b = b.clone();
-                SignalFn::from_fn(move || f(sa_clone.sample(), b.clone()))
+                SignalFn::from_fn(move || f(sample_raw(&sa_clone), b.clone()))
             },
             (&Func(_), &Func(_)) => SignalFn::from_fn(
-                move || f(sa_clone.sample(), sb_clone.sample())
+                move || f(sample_raw(&sa_clone), sample_raw(&sb_clone))
             ),
         }
     }
