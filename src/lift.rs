@@ -32,6 +32,7 @@
 
 use std::sync::Arc;
 use signal::{ Signal, SignalFn, signal_build, signal_current, signal_source, reg_signal };
+use transaction::commit;
 
 
 #[macro_export]
@@ -57,7 +58,7 @@ macro_rules! lift {
 pub fn lift0<A, F>(f: F) -> Signal<A>
     where F: Fn() -> A + Send + Sync + 'static
 {
-    signal_build(SignalFn::from_fn(f), ())
+    commit(|| signal_build(SignalFn::from_fn(f), ()))
 }
 
 
@@ -80,12 +81,14 @@ pub fn lift1<A, B, F>(f: F, sa: &Signal<A>) -> Signal<B>
         }
     }
 
-    let f = Arc::new(f);
-    let signal = signal_build(make_callback(&f, &sa), ());
-    let sa_clone = sa.clone();
-    reg_signal(&mut signal_source(&sa).write().unwrap(), &signal,
-        move |_| make_callback(&f, &sa_clone));
-    signal
+    commit(|| {
+        let f = Arc::new(f);
+        let signal = signal_build(make_callback(&f, &sa), ());
+        let sa_clone = sa.clone();
+        reg_signal(&mut signal_source(&sa).write().unwrap(), &signal,
+            move |_| make_callback(&f, &sa_clone));
+        signal
+    })
 }
 
 
@@ -125,20 +128,22 @@ pub fn lift2<A, B, C, F>(f: F, sa: &Signal<A>, sb: &Signal<B>) -> Signal<C>
         }
     }
 
-    let f = Arc::new(f);
-    let signal = signal_build(make_callback(&f, &sa, &sb), ());
-    reg_signal(&mut signal_source(&sa).write().unwrap(), &signal, {
-        let sa_clone = sa.clone();
-        let sb_clone = sb.clone();
-        let f = f.clone();
-        move |_| make_callback(&f, &sa_clone, &sb_clone)
-    });
-    reg_signal(&mut signal_source(&sb).write().unwrap(), &signal, {
-        let sa_clone = sa.clone();
-        let sb_clone = sb.clone();
-        move |_| make_callback(&f, &sa_clone, &sb_clone)
-    });
-    signal
+    commit(move || {
+        let f = Arc::new(f);
+        let signal = signal_build(make_callback(&f, &sa, &sb), ());
+        reg_signal(&mut signal_source(&sa).write().unwrap(), &signal, {
+            let sa_clone = sa.clone();
+            let sb_clone = sb.clone();
+            let f = f.clone();
+            move |_| make_callback(&f, &sa_clone, &sb_clone)
+        });
+        reg_signal(&mut signal_source(&sb).write().unwrap(), &signal, {
+            let sa_clone = sa.clone();
+            let sb_clone = sb.clone();
+            move |_| make_callback(&f, &sa_clone, &sb_clone)
+        });
+        signal
+    })
 }
 
 /// Lift a ternary function.
