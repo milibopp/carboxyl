@@ -2,6 +2,10 @@
 
 use std::sync::{ Arc, Mutex, RwLock };
 use std::ops::Deref;
+use std::fmt;
+#[cfg(test)]
+use quickcheck::{ Arbitrary, Gen };
+
 use source::{ Source, with_weak, CallbackError };
 use stream::{ self, BoxClone, Stream };
 use transaction::{ commit, register_callback };
@@ -270,6 +274,35 @@ impl<A: Clone + Send + Sync + 'static> Signal<Signal<A>> {
     }
 }
 
+#[cfg(test)]
+impl<A: Arbitrary + Sync + Clone + 'static> Arbitrary for Signal<A> {
+    fn arbitrary<G: Gen>(g: &mut G) -> Signal<A> {
+        let values = Vec::<A>::arbitrary(g);
+        if values.is_empty() {
+            Signal::new(Arbitrary::arbitrary(g))
+        } else {
+            let n = Mutex::new(0);
+            lift::lift0(move || {
+                let mut n = n.lock().unwrap();
+                *n += 1;
+                if *n >= values.len() { *n = 0 }
+                values[*n].clone()
+            })
+        }
+    }
+}
+
+impl<A: fmt::Debug + Clone + 'static> fmt::Debug for Signal<A> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        commit(|| match **self.current.read().unwrap() {
+            SignalFn::Const(ref a) =>
+                fmt.debug_struct("Signal::const").field("value", &a).finish(),
+            SignalFn::Func(ref f) =>
+                fmt.debug_struct("Signal::fn").field("current", &f.call()).finish(),
+        })
+    }
+}
+
 
 /// Forward declaration of a signal to create value loops.
 ///
@@ -448,9 +481,35 @@ pub fn scan_mut<A, B, F>(stream: &Stream<A>, initial: B, f: F) -> SignalMut<B>
 
 #[cfg(test)]
 mod test {
+    use quickcheck::quickcheck;
+
     use ::stream::Sink;
     use ::signal::{ self, Signal, SignalCycle };
     use ::lift::lift1;
+    use ::testing::{ signal_eq, id };
+
+    #[test]
+    fn functor_identity() {
+        fn check(signal: Signal<i32>) -> bool {
+            let eq = signal_eq(&signal, &lift1(id, &signal));
+            (0..10).all(|_| eq.sample())
+        }
+        quickcheck(check as fn(Signal<i32>) -> bool);
+    }
+
+    #[test]
+    fn functor_composition() {
+        fn check(signal: Signal<i32>) -> bool {
+            fn f(n: i32) -> i32 { 3 * n }
+            fn g(n: i32) -> i32 { n + 2 }
+            let eq = signal_eq(
+                &lift1(|n| f(g(n)), &signal),
+                &lift1(f, &lift1(g, &signal))
+            );
+            (0..10).all(|_| eq.sample())
+        }
+        quickcheck(check as fn(Signal<i32>) -> bool);
+    }
 
     #[test]
     fn clone() {

@@ -134,6 +134,7 @@
 //! (An exception here is debugging output.)
 
 #![feature(alloc)]
+#![feature(debug_builders)]
 #![cfg_attr(test, feature(test))]
 #![warn(missing_docs)]
 
@@ -141,6 +142,8 @@
 extern crate test;
 #[cfg(test)]
 extern crate rand;
+#[cfg(test)]
+extern crate quickcheck;
 #[macro_use(lazy_static)]
 extern crate lazy_static;
 
