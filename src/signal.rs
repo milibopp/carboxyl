@@ -12,6 +12,8 @@ use transaction::{ commit, register_callback };
 use pending::Pending;
 use readonly::{ self, ReadOnly };
 use lift;
+#[cfg(test)]
+use testing::ArcFn;
 
 
 /// A functional signal. Caches its return value during a transaction.
@@ -275,6 +277,18 @@ impl<A: Clone + Send + Sync + 'static> Signal<Signal<A>> {
 }
 
 #[cfg(test)]
+impl<A, B> Signal<ArcFn<A, B>>
+    where A: Clone + Send + Sync + 'static,
+          B: Clone + Send + Sync + 'static,
+{
+    /// Applicative functionality. Applies a signal of function to a signal of
+    /// its argument.
+    fn apply(&self, signal: &Signal<A>) -> Signal<B> {
+        lift::lift2(|f, a| f(a), self, signal)
+    }
+}
+
+#[cfg(test)]
 impl<A: Arbitrary + Sync + Clone + 'static> Arbitrary for Signal<A> {
     fn arbitrary<G: Gen>(g: &mut G) -> Signal<A> {
         let values = Vec::<A>::arbitrary(g);
@@ -486,7 +500,7 @@ mod test {
     use ::stream::Sink;
     use ::signal::{ self, Signal, SignalCycle };
     use ::lift::lift1;
-    use ::testing::{ signal_eq, id };
+    use ::testing::{ ArcFn, signal_eq, id, pure_fn, partial_comp };
 
     #[test]
     fn functor_identity() {
@@ -509,6 +523,58 @@ mod test {
             (0..10).all(|_| eq.sample())
         }
         quickcheck(check as fn(Signal<i32>) -> bool);
+    }
+
+    #[test]
+    fn applicative_identity() {
+        fn check(signal: Signal<i32>) -> bool {
+            let eq = signal_eq(&pure_fn(id).apply(&signal), &signal);
+            (0..10).all(|_| eq.sample())
+        }
+        quickcheck(check as fn(Signal<i32>) -> bool);
+    }
+
+    #[test]
+    fn applicative_composition() {
+        fn check(signal: Signal<i32>) -> bool {
+            fn f(n: i32) -> i32 { n * 4 }
+            fn g(n: i32) -> i32 { n - 3 }
+            let u = pure_fn(f);
+            let v = pure_fn(g);
+            let eq = signal_eq(
+                &pure_fn(partial_comp).apply(&u).apply(&v).apply(&signal),
+                &u.apply(&v.apply(&signal))
+            );
+            (0..10).all(|_| eq.sample())
+        }
+        quickcheck(check as fn(Signal<i32>) -> bool);
+    }
+
+    #[test]
+    fn applicative_homomorphism() {
+        fn check(x: i32) -> bool {
+            fn f(x: i32) -> i32 { x * (-5) }
+            let eq = signal_eq(
+                &pure_fn(f).apply(&Signal::new(x)),
+                &Signal::new(f(x))
+            );
+            (0..10).all(|_| eq.sample())
+        }
+        quickcheck(check as fn(i32) -> bool);
+    }
+
+    #[test]
+    fn applicative_interchange() {
+        fn check(x: i32) -> bool {
+            fn f(x: i32) -> i32 { x * 2 - 7 }
+            let u = pure_fn(f);
+            let eq = signal_eq(
+                &u.apply(&Signal::new(x)),
+                &pure_fn(move |f: ArcFn<i32, i32>| f(x)).apply(&u)
+            );
+            (0..10).all(|_| eq.sample())
+        }
+        quickcheck(check as fn(i32) -> bool);
     }
 
     #[test]
