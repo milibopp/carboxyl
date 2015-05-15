@@ -239,4 +239,16 @@ mod test {
             -1
         );
     }
+
+    #[test]
+    fn lift0_equal_within_transaction() {
+        use rand::random;
+        // Generate a completely random signal
+        let rnd = lift!(random::<i64>);
+        // Make a tuple with itself
+        let gather = lift!(|a, b| (a, b), &rnd, &rnd);
+        // Both components should be equal
+        let (a, b) = gather.sample();
+        assert_eq!(a, b);
+    }
 }
