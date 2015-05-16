@@ -4,8 +4,8 @@ use std::sync::{ Arc, RwLock, Mutex, Weak };
 use std::sync::mpsc::{ Receiver, channel };
 use std::thread;
 use source::{ Source, CallbackError, CallbackResult, with_weak };
-use signal::{ self, Signal, SignalMut, SignalCycle };
-use transaction::{ register_callback, commit };
+use signal::{ self, Signal, SignalMut, SignalCycle, sample_raw };
+use transaction::{ commit, later };
 
 
 /// An event sink.
@@ -290,13 +290,16 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
                         Some(b) => f(a, b),
                         None => a,
                     });
-                    // Set at the end of the transaction
-                    register_callback({
+                    // Send the updated value later
+                    later({
                         let mutex = mutex.clone();
                         let weak = weak.clone();
                         move || {
-                            let _ = mutex.lock().unwrap().as_ref()
-                                .map(|value| with_weak(&weak, |src| src.send(value.clone())));
+                            let mut inner = mutex.lock().unwrap();
+                            // Take it out and map, so that it does not happen twice
+                            inner.take().map(|value|
+                                with_weak(&weak, |src| src.send(value))
+                            );
                         }
                     });
                     Ok(())
@@ -487,7 +490,7 @@ pub fn snapshot<A, B, C, F>(signal: &Signal<A>, stream: &Stream<B>, f: F) -> Str
         let weak = src.downgrade();
         stream.source.write().unwrap().register({
             let signal = signal.clone();
-            move |b| with_weak(&weak, |src| src.send(f(signal.sample(), b)))
+            move |b| with_weak(&weak, |src| src.send(f(sample_raw(&signal), b)))
         });
         Stream {
             source: src,

@@ -133,8 +133,7 @@
 //! the FRP primitives, as they break the benefits you get from using FRP.
 //! (An exception here is debugging output.)
 
-#![feature(alloc)]
-#![feature(debug_builders)]
+#![feature(core, alloc, debug_builders)]
 #![cfg_attr(test, feature(test))]
 #![warn(missing_docs)]
 
