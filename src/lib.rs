@@ -134,7 +134,7 @@
 //! (An exception here is debugging output.)
 
 #![feature(core, alloc, debug_builders)]
-#![cfg_attr(test, feature(test))]
+#![cfg_attr(test, feature(test, scoped))]
 #![warn(missing_docs)]
 
 #[cfg(test)]

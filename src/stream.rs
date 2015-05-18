@@ -532,6 +532,10 @@ impl<A: Send + Sync + 'static> Iterator for Events<A> {
 
 #[cfg(test)]
 mod test {
+    use std::thread;
+    use quickcheck::quickcheck;
+
+    use testing::stream_eq;
     use super::*;
 
     #[test]
@@ -647,5 +651,49 @@ mod test {
 
         sink.send(1);
         assert_eq!(events.next(), Some(2));
+    }
+
+    #[test]
+    fn monoid_left_identity() {
+        fn check(input: Vec<i32>) -> bool {
+            let sink = Sink::new();
+            let a = sink.stream();
+            let eq = stream_eq(&Stream::never().merge(&a), &a);
+            sink.feed(input.into_iter());
+            eq.sample()
+        }
+        quickcheck(check as fn(Vec<i32>) -> bool);
+    }
+
+    #[test]
+    fn monoid_right_identity() {
+        fn check(input: Vec<i32>) -> bool {
+            let sink = Sink::new();
+            let a = sink.stream();
+            let eq = stream_eq(&a.merge(&Stream::never()), &a);
+            sink.feed(input.into_iter());
+            eq.sample()
+        }
+        quickcheck(check as fn(Vec<i32>) -> bool);
+    }
+
+    #[test]
+    fn monoid_associative() {
+        fn check(input_a: Vec<i32>, input_b: Vec<i32>, input_c: Vec<i32>) -> bool {
+            let sink_a = Sink::new();
+            let sink_b = Sink::new();
+            let sink_c = Sink::new();
+            let a = sink_a.stream();
+            let b = sink_b.stream();
+            let c = sink_c.stream();
+            let eq = stream_eq(&a.merge(&b.merge(&c)), &a.merge(&b).merge(&c));
+            /* feed in parallel */ {
+                let _g1 = thread::scoped(|| sink_a.feed(input_a.into_iter()));
+                let _g2 = thread::scoped(|| sink_b.feed(input_b.into_iter()));
+                let _g3 = thread::scoped(|| sink_c.feed(input_c.into_iter()));
+            }
+            eq.sample()
+        }
+        quickcheck(check as fn(Vec<i32>, Vec<i32>, Vec<i32>) -> bool);
     }
 }
