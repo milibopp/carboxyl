@@ -4,7 +4,7 @@ use std::sync::{ Arc, RwLock, Mutex, Weak };
 use std::sync::mpsc::{ Receiver, channel };
 use std::thread;
 use source::{ Source, CallbackError, CallbackResult, with_weak };
-use signal::{ self, Signal, SignalMut, SignalCycle };
+use signal::{ self, Signal, SignalMut };
 use transaction::commit;
 
 
@@ -310,9 +310,7 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
         where B: Send + Sync + Clone + 'static,
               F: Fn(B, A) -> B + Send + Sync + 'static,
     {
-        let scan = SignalCycle::new();
-        let def = scan.snapshot(self, f).hold(initial);
-        scan.define(def)
+        Signal::cyclic(|scan| scan.snapshot(self, f).hold(initial))
     }
 
     /// Scan a stream and accumulate its event firings in some mutable state.
@@ -569,6 +567,18 @@ mod test {
         let sink = Sink::<i32>::new();
         let x = 3;
         sink.stream().map(move |y| y + x);
+    }
+
+    #[test]
+    fn scan_race_condition() {
+        let sink = Sink::new();
+        // Feed the sink in the background
+        sink.feed_async(0..100000);
+        // Try it multiple times to increase failure probability, when a data
+        // race can potentially happen.
+        for _ in 0..10 {
+            let _sum = sink.stream().scan(0, |a, b| a + b);
+        }
     }
 
     #[test]
