@@ -498,6 +498,27 @@ pub fn snapshot<A, B, C, F>(signal: &Signal<A>, stream: &Stream<B>, f: F) -> Str
 }
 
 
+/// Monadic bind operation for streams. Equivalent to `.map(f).switch()`.
+pub fn bind<T, U, F: Fn(T) -> Stream<U>>(a: &Stream<T>, f: F) -> Stream<U>
+    where T: Clone + Send + Sync + 'static,
+          U: Clone + Send + Sync + 'static,
+          F: Send + Sync + 'static,
+{
+    a.map(f).switch()
+}
+
+
+/// Neutral element for monadic bind.
+pub fn ret<T>(value: T) -> Stream<T>
+    where T: Clone + Send + Sync + 'static,
+{
+    let sink = Sink::new();
+    let stream = sink.stream();
+    sink.send(value);
+    stream
+}
+
+
 /// A blocking iterator over events in a stream.
 pub struct Events<A> {
     receiver: Receiver<A>,
@@ -732,5 +753,20 @@ mod test {
             eq.sample()
         }
         quickcheck(check as fn(Vec<i32>) -> bool);
+    }
+
+    #[test]
+    fn monad_neutral_1() {
+        fn check(x: i32) -> bool {
+            fn f(n: i32) -> Stream<i64> {
+                let sink = Sink::new();
+                sink.feed_async((0..n).map(|k| k as i64));
+                sink.stream()
+            }
+            let eq = stream_eq(&bind(&ret(x), f), &f(x));
+            thread::sleep_ms(1);
+            eq.sample()
+        }
+        quickcheck(check as fn(i32) -> bool);
     }
 }
