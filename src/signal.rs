@@ -480,7 +480,7 @@ impl<A: Send + Sync + 'static> SignalMut<A> {
 }
 
 
-/// Hold a stream as a signal.
+/// Same as Stream::hold.
 pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
     where A: Send + Sync + 'static,
 {
@@ -492,6 +492,7 @@ pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
 }
 
 
+/// Same as Stream::scan_mut.
 pub fn scan_mut<A, B, F>(stream: &Stream<A>, initial: B, f: F) -> SignalMut<B>
     where A: Send + Sync + 'static,
           B: Send + Sync + 'static,
