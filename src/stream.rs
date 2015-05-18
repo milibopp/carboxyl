@@ -769,4 +769,42 @@ mod test {
         }
         quickcheck(check as fn(i32) -> bool);
     }
+
+    #[test]
+    fn monad_neutral_2() {
+        fn check(input: Vec<i32>) -> bool {
+            let sink = Sink::new();
+            let a = sink.stream();
+            let eq = stream_eq(&bind(&a, ret), &a);
+            sink.feed(input.into_iter());
+            eq.sample()
+        }
+        quickcheck(check as fn(Vec<i32>) -> bool);
+    }
+
+    #[test]
+    fn monad_bind() {
+        fn check(input: Vec<i32>) -> bool {
+            fn f(n: i32) -> Stream<i64> {
+                let sink = Sink::new();
+                sink.feed_async((0..n).map(|k| k as i64));
+                sink.stream()
+            }
+            fn g(n: i64) -> Stream<f64> {
+                let sink = Sink::new();
+                sink.feed_async((0..n).map(|k| k as f64 / 2.5));
+                sink.stream()
+            }
+
+            let sink = Sink::new();
+            sink.feed_async(input.into_iter());
+            let a = sink.stream();
+            let eq = stream_eq(
+                &bind(&bind(&a, f), g),
+                &bind(&a, |x| bind(&f(x), g))
+            );
+            eq.sample()
+        }
+        quickcheck(check as fn(Vec<i32>) -> bool);
+    }
 }
