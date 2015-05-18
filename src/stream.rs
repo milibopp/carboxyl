@@ -535,7 +535,7 @@ mod test {
     use std::thread;
     use quickcheck::quickcheck;
 
-    use testing::stream_eq;
+    use testing::{ id, stream_eq };
     use super::*;
 
     #[test]
@@ -695,5 +695,32 @@ mod test {
             eq.sample()
         }
         quickcheck(check as fn(Vec<i32>, Vec<i32>, Vec<i32>) -> bool);
+    }
+
+    #[test]
+    fn functor_identity() {
+        fn check(input: Vec<i32>) -> bool {
+            let sink = Sink::new();
+            let a = sink.stream();
+            let eq = stream_eq(&a.map(id), &a);
+            sink.feed(input.into_iter());
+            eq.sample()
+        }
+        quickcheck(check as fn(Vec<i32>) -> bool);
+    }
+
+    #[test]
+    fn functor_composition() {
+        fn check(input: Vec<i32>) -> bool {
+            fn f(n: i32) -> i64 { (n + 3) as i64 }
+            fn g(n: i64) -> f64 { n as f64 / 2.5 }
+
+            let sink = Sink::new();
+            let a = sink.stream();
+            let eq = stream_eq(&a.map(f).map(g), &a.map(|n| g(f(n))));
+            sink.feed(input.into_iter());
+            eq.sample()
+        }
+        quickcheck(check as fn(Vec<i32>) -> bool);
     }
 }
