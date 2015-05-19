@@ -19,10 +19,11 @@ pub fn signal_eq<T>(a: &Signal<T>, b: &Signal<T>) -> Signal<bool>
     lift!(|a, b| a == b, a, b)
 }
 
+/// Trace equality of two streams.
 pub fn stream_eq<T>(a: &Stream<T>, b: &Stream<T>) -> Signal<bool>
-    where T: PartialEq + Clone + Send + Sync + 'static + Debug,
+    where T: PartialEq + Clone + Send + Sync + 'static,
 {
-    fn tag<T: Debug>(t: u64, a: T) -> Option<(u64, T)> {
+    fn tag<T>(t: u64, a: T) -> Option<(u64, T)> {
         Some((t, a))
     }
 
