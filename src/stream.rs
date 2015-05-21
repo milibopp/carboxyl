@@ -498,27 +498,6 @@ pub fn snapshot<A, B, C, F>(signal: &Signal<A>, stream: &Stream<B>, f: F) -> Str
 }
 
 
-/// Monadic bind operation for streams. Equivalent to `.map(f).switch()`.
-pub fn bind<T, U, F: Fn(T) -> Stream<U>>(a: &Stream<T>, f: F) -> Stream<U>
-    where T: Clone + Send + Sync + 'static,
-          U: Clone + Send + Sync + 'static,
-          F: Send + Sync + 'static,
-{
-    a.map(f).switch()
-}
-
-
-/// Neutral element for monadic bind.
-pub fn ret<T>(value: T) -> Stream<T>
-    where T: Clone + Send + Sync + 'static,
-{
-    let sink = Sink::new();
-    let stream = sink.stream();
-    sink.send(value);
-    stream
-}
-
-
 /// A blocking iterator over events in a stream.
 pub struct Events<A> {
     receiver: Receiver<A>,
@@ -686,31 +665,31 @@ mod test {
 
     #[test]
     fn monoid_left_identity() {
-        fn check(input: Vec<i32>) -> bool {
+        fn check(input: Vec<i32>) -> Result<bool, String> {
             let sink = Sink::new();
             let a = sink.stream();
             let eq = stream_eq(&Stream::never().merge(&a), &a);
             sink.feed(input.into_iter());
             eq.sample()
         }
-        quickcheck(check as fn(Vec<i32>) -> bool);
+        quickcheck(check as fn(Vec<i32>) -> Result<bool, String>);
     }
 
     #[test]
     fn monoid_right_identity() {
-        fn check(input: Vec<i32>) -> bool {
+        fn check(input: Vec<i32>) -> Result<bool, String> {
             let sink = Sink::new();
             let a = sink.stream();
             let eq = stream_eq(&a.merge(&Stream::never()), &a);
             sink.feed(input.into_iter());
             eq.sample()
         }
-        quickcheck(check as fn(Vec<i32>) -> bool);
+        quickcheck(check as fn(Vec<i32>) -> Result<bool, String>);
     }
 
     #[test]
     fn monoid_associative() {
-        fn check(input_a: Vec<i32>, input_b: Vec<i32>, input_c: Vec<i32>) -> bool {
+        fn check(input_a: Vec<i32>, input_b: Vec<i32>, input_c: Vec<i32>) -> Result<bool, String> {
             let sink_a = Sink::new();
             let sink_b = Sink::new();
             let sink_c = Sink::new();
@@ -725,24 +704,24 @@ mod test {
             }
             eq.sample()
         }
-        quickcheck(check as fn(Vec<i32>, Vec<i32>, Vec<i32>) -> bool);
+        quickcheck(check as fn(Vec<i32>, Vec<i32>, Vec<i32>) -> Result<bool, String>);
     }
 
     #[test]
     fn functor_identity() {
-        fn check(input: Vec<i32>) -> bool {
+        fn check(input: Vec<i32>) -> Result<bool, String> {
             let sink = Sink::new();
             let a = sink.stream();
             let eq = stream_eq(&a.map(id), &a);
             sink.feed(input.into_iter());
             eq.sample()
         }
-        quickcheck(check as fn(Vec<i32>) -> bool);
+        quickcheck(check as fn(Vec<i32>) -> Result<bool, String>);
     }
 
     #[test]
     fn functor_composition() {
-        fn check(input: Vec<i32>) -> bool {
+        fn check(input: Vec<i32>) -> Result<bool, String> {
             fn f(n: i32) -> i64 { (n + 3) as i64 }
             fn g(n: i64) -> f64 { n as f64 / 2.5 }
 
@@ -752,59 +731,6 @@ mod test {
             sink.feed(input.into_iter());
             eq.sample()
         }
-        quickcheck(check as fn(Vec<i32>) -> bool);
-    }
-
-    #[test]
-    fn monad_neutral_1() {
-        fn check(x: i32) -> bool {
-            fn f(n: i32) -> Stream<i64> {
-                let sink = Sink::new();
-                sink.feed_async((0..n).map(|k| k as i64));
-                sink.stream()
-            }
-            let eq = stream_eq(&bind(&ret(x), f), &f(x));
-            thread::sleep_ms(1);
-            eq.sample()
-        }
-        quickcheck(check as fn(i32) -> bool);
-    }
-
-    #[test]
-    fn monad_neutral_2() {
-        fn check(input: Vec<i32>) -> bool {
-            let sink = Sink::new();
-            let a = sink.stream();
-            let eq = stream_eq(&bind(&a, ret), &a);
-            sink.feed(input.into_iter());
-            eq.sample()
-        }
-        quickcheck(check as fn(Vec<i32>) -> bool);
-    }
-
-    #[test]
-    fn monad_bind() {
-        fn check(input: Vec<i32>) -> bool {
-            fn f(n: i32) -> Stream<i64> {
-                let sink = Sink::new();
-                sink.feed_async((0..n).map(|k| k as i64));
-                sink.stream()
-            }
-            fn g(n: i64) -> Stream<f64> {
-                let sink = Sink::new();
-                sink.feed_async((0..n).map(|k| k as f64 / 2.5));
-                sink.stream()
-            }
-
-            let sink = Sink::new();
-            sink.feed_async(input.into_iter());
-            let a = sink.stream();
-            let eq = stream_eq(
-                &bind(&bind(&a, f), g),
-                &bind(&a, |x| bind(&f(x), g))
-            );
-            eq.sample()
-        }
-        quickcheck(check as fn(Vec<i32>) -> bool);
+        quickcheck(check as fn(Vec<i32>) -> Result<bool, String>);
     }
 }
