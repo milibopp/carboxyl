@@ -5,6 +5,7 @@
 
 use std::sync::Mutex;
 use std::cell::RefCell;
+use std::boxed::FnBox;
 
 
 /// The global transaction lock.
@@ -22,34 +23,61 @@ thread_local!(
 );
 
 
-/// A transaction
+/// A callback.
+type Callback = Box<FnBox() + 'static>;
+
+
+/// A transaction.
 pub struct Transaction {
-    callbacks: Vec<Box<Fn() + 'static>>,
+    intermediate: Vec<Callback>,
+    finalizers: Vec<Callback>,
 }
 
 impl Transaction {
     /// Create a new transaction
-    pub fn new() -> Transaction {
-        Transaction { callbacks: Vec::new() }
+    fn new() -> Transaction {
+        Transaction {
+            intermediate: vec![],
+            finalizers: vec![],
+        }
     }
 
-    /// Add a callback
-    pub fn register<F: Fn() + 'static>(&mut self, callback: F) {
-        self.callbacks.push(Box::new(callback));
+    /// Add a callback that will be called, when the transaction is done
+    /// except for finalizers.
+    pub fn later<F: FnOnce() + 'static>(&mut self, callback: F) {
+        self.intermediate.push(Box::new(callback));
+    }
+
+    /// Add a finalizing callback. This should not have far reaching
+    /// side-effects, and in particular not commit by itself. Typical operations
+    /// for a finalizer are executing queued state updates.
+    pub fn end<F: FnOnce() + 'static>(&mut self, callback: F) {
+        self.finalizers.push(Box::new(callback));
+    }
+
+    /// Advance transactions by moving out intermediate stage callbacks.
+    fn advance(&mut self) -> Vec<Callback> {
+        use std::mem;
+        let mut intermediate = vec![];
+        mem::swap(&mut intermediate, &mut self.intermediate);
+        intermediate
     }
 
     /// Finalize the transaction
-    pub fn finalize(self) {
-        for callback in self.callbacks { callback(); }
+    fn finalize(self) {
+        for finalizer in self.finalizers {
+            finalizer.call_box(());
+        }
     }
 }
+
 
 /// Commit a transaction.
 ///
 /// If the thread is not running any transactions currently, the global lock is
 /// acquired. Otherwise a new transaction begins, since given the interface of
 /// this module it is safely assumed that the lock is already held.
-pub fn commit<A, F: FnOnce() -> A>(transaction: F) -> A {
+pub fn commit<A, F: FnOnce() -> A>(body: F) -> A {
     use std::mem;
     // Begin a new transaction
     let mut prev = CURRENT_TRANSACTION.with(|current| {
@@ -64,26 +92,42 @@ pub fn commit<A, F: FnOnce() -> A>(transaction: F) -> A {
         ),
         Some(_) => None,
     };
-    // Perform the transaction
-    let result = transaction();
+    // Perform the main body of the transaction
+    let result = body();
+    // Advance the transaction as long as necessary
+    loop {
+        let callbacks = with_current(Transaction::advance);
+        if callbacks.is_empty() { break }
+        for callback in callbacks {
+            callback.call_box(());
+        }
+    }
     // Call all finalizers and drop the transaction
-    CURRENT_TRANSACTION.with(move |current| {
-        mem::swap(&mut prev, &mut current.borrow_mut());
-        prev.unwrap().finalize();
-    });
+    CURRENT_TRANSACTION.with(|current|
+        mem::swap(&mut prev, &mut current.borrow_mut())
+    );
+    prev.unwrap().finalize();
     // Return
     result
 }
 
 
 /// Register a callback during a transaction.
-pub fn register_callback<F: Fn() + 'static>(callback: F) {
-    CURRENT_TRANSACTION.with(move |current|
+pub fn with_current<A, F: FnOnce(&mut Transaction) -> A>(action: F) -> A {
+    CURRENT_TRANSACTION.with(|current|
         match &mut *current.borrow_mut() {
-            &mut Some(ref mut trans) => trans.register(callback),
-            _ => panic!("cannot do stuff, meh… :( "),
+            &mut Some(ref mut trans) => action(trans),
+            _ => panic!("there is no active transaction to register a callback"),
         }
-    );
+    )
+}
+
+pub fn later<F: FnOnce() + 'static>(action: F) {
+    with_current(|c| c.later(action))
+}
+
+pub fn end<F: FnOnce() + 'static>(action: F) {
+    with_current(|c| c.end(action))
 }
 
 

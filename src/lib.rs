@@ -133,14 +133,16 @@
 //! the FRP primitives, as they break the benefits you get from using FRP.
 //! (An exception here is debugging output.)
 
-#![feature(alloc)]
-#![cfg_attr(test, feature(test))]
+#![feature(core, alloc, debug_builders)]
+#![cfg_attr(test, feature(test, scoped))]
 #![warn(missing_docs)]
 
 #[cfg(test)]
 extern crate test;
 #[cfg(test)]
 extern crate rand;
+#[cfg(test)]
+extern crate quickcheck;
 #[macro_use(lazy_static)]
 extern crate lazy_static;
 
@@ -155,3 +157,5 @@ mod stream;
 mod signal;
 #[macro_use]
 pub mod lift;
+#[cfg(test)]
+mod testing;

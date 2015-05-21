@@ -2,12 +2,18 @@
 
 use std::sync::{ Arc, Mutex, RwLock };
 use std::ops::Deref;
+use std::fmt;
+#[cfg(test)]
+use quickcheck::{ Arbitrary, Gen };
+
 use source::{ Source, with_weak, CallbackError };
 use stream::{ self, BoxClone, Stream };
-use transaction::{ commit, register_callback };
+use transaction::{ commit, end };
 use pending::Pending;
 use readonly::{ self, ReadOnly };
 use lift;
+#[cfg(test)]
+use testing::ArcFn;
 
 
 /// A functional signal. Caches its return value during a transaction.
@@ -34,7 +40,10 @@ impl<A: Clone + 'static> FuncSignal<A> {
             cached => {
                 // Register callback to reset cache at the end of the transaction
                 let cache = self.cache.clone();
-                register_callback(move || *cache.lock().unwrap() = None);
+                end(move || {
+                    let mut live = cache.lock().unwrap();
+                    *live = None;
+                });
                 // Calculate & cache value
                 let value = (self.func)();
                 *cached = Some(value.clone());
@@ -75,7 +84,7 @@ pub fn reg_signal<A, B, F>(parent_source: &mut Source<A>, signal: &Signal<B>, ha
     let weak_source = signal.source.downgrade();
     let weak_current = signal.current.downgrade();
     parent_source.register(move |a|
-        weak_current.upgrade().map(|cur| register_callback(
+        weak_current.upgrade().map(|cur| end(
             move || { let _ = cur.write().map(|mut cur| cur.update()); }))
             .ok_or(CallbackError::Disappeared)
         .and(with_weak(&weak_current, |cur| cur.queue(handler(a))))
@@ -108,6 +117,40 @@ pub fn sample_raw<A: Clone + 'static>(signal: &Signal<A>) -> A {
 
 
 /// A continuous signal that changes over time.
+///
+/// Signals can be thought of as values that change over time. They have both a
+/// continuous and a discrete component. This means that their current value is
+/// defined by a function that can be called at any time. That function is only
+/// evaluated on-demand, when the signal's current value is sampled. (This is
+/// also called pull semantics in the literature on FRP.)
+///
+/// In addition, the current function used to sample a signal may change
+/// discretely in reaction to some event. For instance, it is possible to create
+/// a signal from an event stream, by holding the last event occurence as the
+/// current value of the stream.
+///
+/// # Algebraic laws
+///
+/// Signals come with some primitive methods to compose them with each other and
+/// with streams. Some of these primitives give the signals an algebraic
+/// structure.
+///
+/// ## Functor
+///
+/// Signals form a functor under unary lifting. Thus, the following laws hold:
+///
+/// - Preservation of identity: `lift!(|x| x, &a) == a`,
+/// - Function composition: `lift!(|x| g(f(x)), &a) == lift!(g, &lift!(f, &a))`.
+///
+/// ## Applicative functor
+///
+/// By extension, using the notion of a signal of a function, signals also
+/// become an [applicative][ghc-applicative] using `Signal::new` as `pure` and
+/// `|sf, sa| lift!(|f, a| f(a), &sf, &sa)` as `<*>`.
+///
+/// *TODO: Expand on this and replace the Haskell reference.*
+///
+/// [ghc-applicative]: https://downloads.haskell.org/~ghc/latest/docs/html/libraries/base/Control-Applicative.html
 pub struct Signal<A> {
     current: Arc<RwLock<Pending<SignalFn<A>>>>,
     source: Arc<RwLock<Source<()>>>,
@@ -281,6 +324,47 @@ impl<A: Clone + Send + Sync + 'static> Signal<Signal<A>> {
     }
 }
 
+#[cfg(test)]
+impl<A, B> Signal<ArcFn<A, B>>
+    where A: Clone + Send + Sync + 'static,
+          B: Clone + Send + Sync + 'static,
+{
+    /// Applicative functionality. Applies a signal of function to a signal of
+    /// its argument.
+    fn apply(&self, signal: &Signal<A>) -> Signal<B> {
+        lift::lift2(|f, a| f(a), self, signal)
+    }
+}
+
+#[cfg(test)]
+impl<A: Arbitrary + Sync + Clone + 'static> Arbitrary for Signal<A> {
+    fn arbitrary<G: Gen>(g: &mut G) -> Signal<A> {
+        let values = Vec::<A>::arbitrary(g);
+        if values.is_empty() {
+            Signal::new(Arbitrary::arbitrary(g))
+        } else {
+            let n = Mutex::new(0);
+            lift::lift0(move || {
+                let mut n = n.lock().unwrap();
+                *n += 1;
+                if *n >= values.len() { *n = 0 }
+                values[*n].clone()
+            })
+        }
+    }
+}
+
+impl<A: fmt::Debug + Clone + 'static> fmt::Debug for Signal<A> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        commit(|| match **self.current.read().unwrap() {
+            SignalFn::Const(ref a) =>
+                fmt.debug_struct("Signal::const").field("value", &a).finish(),
+            SignalFn::Func(ref f) =>
+                fmt.debug_struct("Signal::fn").field("current", &f.call()).finish(),
+        })
+    }
+}
+
 
 /// Forward declaration of a signal to create value loops.
 ///
@@ -430,7 +514,7 @@ impl<A: Send + Sync + 'static> SignalMut<A> {
 }
 
 
-/// Hold a stream as a signal.
+/// Same as Stream::hold.
 pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
     where A: Send + Sync + 'static,
 {
@@ -442,6 +526,7 @@ pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
 }
 
 
+/// Same as Stream::scan_mut.
 pub fn scan_mut<A, B, F>(stream: &Stream<A>, initial: B, f: F) -> SignalMut<B>
     where A: Send + Sync + 'static,
           B: Send + Sync + 'static,
@@ -459,9 +544,87 @@ pub fn scan_mut<A, B, F>(stream: &Stream<A>, initial: B, f: F) -> SignalMut<B>
 
 #[cfg(test)]
 mod test {
+    use quickcheck::quickcheck;
+
     use ::stream::Sink;
     use ::signal::{ self, Signal, SignalCycle };
     use ::lift::lift1;
+    use ::testing::{ ArcFn, signal_eq, id, pure_fn, partial_comp };
+
+    #[test]
+    fn functor_identity() {
+        fn check(signal: Signal<i32>) -> bool {
+            let eq = signal_eq(&signal, &lift1(id, &signal));
+            (0..10).all(|_| eq.sample())
+        }
+        quickcheck(check as fn(Signal<i32>) -> bool);
+    }
+
+    #[test]
+    fn functor_composition() {
+        fn check(signal: Signal<i32>) -> bool {
+            fn f(n: i32) -> i32 { 3 * n }
+            fn g(n: i32) -> i32 { n + 2 }
+            let eq = signal_eq(
+                &lift1(|n| f(g(n)), &signal),
+                &lift1(f, &lift1(g, &signal))
+            );
+            (0..10).all(|_| eq.sample())
+        }
+        quickcheck(check as fn(Signal<i32>) -> bool);
+    }
+
+    #[test]
+    fn applicative_identity() {
+        fn check(signal: Signal<i32>) -> bool {
+            let eq = signal_eq(&pure_fn(id).apply(&signal), &signal);
+            (0..10).all(|_| eq.sample())
+        }
+        quickcheck(check as fn(Signal<i32>) -> bool);
+    }
+
+    #[test]
+    fn applicative_composition() {
+        fn check(signal: Signal<i32>) -> bool {
+            fn f(n: i32) -> i32 { n * 4 }
+            fn g(n: i32) -> i32 { n - 3 }
+            let u = pure_fn(f);
+            let v = pure_fn(g);
+            let eq = signal_eq(
+                &pure_fn(partial_comp).apply(&u).apply(&v).apply(&signal),
+                &u.apply(&v.apply(&signal))
+            );
+            (0..10).all(|_| eq.sample())
+        }
+        quickcheck(check as fn(Signal<i32>) -> bool);
+    }
+
+    #[test]
+    fn applicative_homomorphism() {
+        fn check(x: i32) -> bool {
+            fn f(x: i32) -> i32 { x * (-5) }
+            let eq = signal_eq(
+                &pure_fn(f).apply(&Signal::new(x)),
+                &Signal::new(f(x))
+            );
+            (0..10).all(|_| eq.sample())
+        }
+        quickcheck(check as fn(i32) -> bool);
+    }
+
+    #[test]
+    fn applicative_interchange() {
+        fn check(x: i32) -> bool {
+            fn f(x: i32) -> i32 { x * 2 - 7 }
+            let u = pure_fn(f);
+            let eq = signal_eq(
+                &u.apply(&Signal::new(x)),
+                &pure_fn(move |f: ArcFn<i32, i32>| f(x)).apply(&u)
+            );
+            (0..10).all(|_| eq.sample())
+        }
+        quickcheck(check as fn(i32) -> bool);
+    }
 
     #[test]
     fn clone() {
