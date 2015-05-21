@@ -117,6 +117,40 @@ pub fn sample_raw<A: Clone + 'static>(signal: &Signal<A>) -> A {
 
 
 /// A continuous signal that changes over time.
+///
+/// Signals can be thought of as values that change over time. They have both a
+/// continuous and a discrete component. This means that their current value is
+/// defined by a function that can be called at any time. That function is only
+/// evaluated on-demand, when the signal's current value is sampled. (This is
+/// also called pull semantics in the literature on FRP.)
+///
+/// In addition, the current function used to sample a signal may change
+/// discretely in reaction to some event. For instance, it is possible to create
+/// a signal from an event stream, by holding the last event occurence as the
+/// current value of the stream.
+///
+/// # Algebraic laws
+///
+/// Signals come with some primitive methods to compose them with each other and
+/// with streams. Some of these primitives give the signals an algebraic
+/// structure.
+///
+/// ## Functor
+///
+/// Signals form a functor under unary lifting. Thus, the following laws hold:
+///
+/// - Preservation of identity: `lift!(|x| x, &a) == a`,
+/// - Function composition: `lift!(|x| g(f(x)), &a) == lift!(g, &lift!(f, &a))`.
+///
+/// ## Applicative functor
+///
+/// By extension, using the notion of a signal of a function, signals also
+/// become an [applicative][ghc-applicative] using `Signal::new` as `pure` and
+/// `|sf, sa| lift!(|f, a| f(a), &sf, &sa)` as `<*>`.
+///
+/// *TODO: Expand on this and replace the Haskell reference.*
+///
+/// [ghc-applicative]: https://downloads.haskell.org/~ghc/latest/docs/html/libraries/base/Control-Applicative.html
 pub struct Signal<A> {
     current: Arc<RwLock<Pending<SignalFn<A>>>>,
     source: Arc<RwLock<Source<()>>>,

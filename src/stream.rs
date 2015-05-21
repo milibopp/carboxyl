@@ -142,9 +142,47 @@ pub fn source<A>(stream: &Stream<A>) -> &Arc<RwLock<Source<A>>> {
 }
 
 
-/// A stream of discrete events.
+/// A stream of events.
 ///
-/// This occasionally fires an event of type `A`.
+/// Conceptually a stream can be thought of as a series of discrete events that
+/// occur at specific times. They are ordered by a transaction system. This
+/// means that firings of disjoint events can not interfere with each other. The
+/// consequences of one event are atomically reflected in dependent quantities.
+///
+/// Streams provide a number of primitive operations. These can be used to
+/// compose streams and combine them with signals. For instance, streams can be
+/// mapped over with a function, merged with another stream of the same type or
+/// filtered by some predicate.
+///
+/// # Algebraic laws
+///
+/// Furthermore, streams satisfy certain algebraic properties that are useful to
+/// reason about them.
+///
+/// ## Monoid
+///
+/// For once, streams of the same type form a **monoid** under merging. The
+/// neutral element in this context is `Stream::never()`. So the following laws
+/// always hold for streams `a`, `b` and `c` of the same type:
+///
+/// - Left identity: `Stream::never().merge(&a) == a`,
+/// - Right identity: `a.merge(&Stream::never()) == a`,
+/// - Associativity: `a.merge(&b).merge(&c) == a.merge(&b.merge(&c))`.
+///
+/// *Note that equality in this context is not actually implemented as such,
+/// since comparing two (potentially infinite) streams is a prohibitive
+/// operation. Instead, the expressions above can be used interchangably and
+/// behave identically.*
+///
+/// ## Functor
+///
+/// Under the mapping operation streams also become a functor. A functor is a
+/// generic type like `Stream` with some mapping operation that takes a function
+/// `Fn(A) -> B` to map a `Stream<A>` to a `Stream<B>`. Algebraically it
+/// satisfies the following laws:
+///
+/// - The identity function is preserved: `a.map(|x| x) == a`,
+/// - Function composition is respected: `a.map(f).map(g) == a.map(|x| g(f(x)))`.
 pub struct Stream<A> {
     source: Arc<RwLock<Source<A>>>,
     #[allow(dead_code)]
