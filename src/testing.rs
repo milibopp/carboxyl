@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::fmt::Debug;
 use rand::random;
 
-use lift::lift0;
+use lift::{ lift0, lift1 };
 use signal::Signal;
 use stream::Stream;
 
@@ -19,24 +19,39 @@ pub fn signal_eq<T>(a: &Signal<T>, b: &Signal<T>) -> Signal<bool>
     lift!(|a, b| a == b, a, b)
 }
 
-/// Trace equality of two streams.
-pub fn stream_eq<T>(a: &Stream<T>, b: &Stream<T>) -> Signal<bool>
-    where T: PartialEq + Clone + Send + Sync + 'static,
-{
-    fn tag<T>(t: u64, a: T) -> Option<(u64, T)> {
-        Some((t, a))
-    }
+/// Error of stream equivalence.
+#[derive(Copy, Clone, PartialEq, Debug)]
+enum EquivError<T> {
+    Mismatch(T, T),
+    OnlyOne(T),
+    Other,
+}
 
+/// Simple pairing function.
+fn pair<T, U>(t: T, u: U) -> (T, U) {
+    (t, u)
+}
+
+/// Trace equality of two streams.
+pub fn stream_eq<T>(a: &Stream<T>, b: &Stream<T>) -> Signal<Result<bool, String>>
+    where T: PartialEq + Clone + Send + Sync + 'static + Debug,
+{
+    use self::EquivError::*;
     let tagger = lift0(random::<u64>);
-    tagger.snapshot(a, tag)
-        .merge(&tagger.snapshot(b, tag))
+    let result = tagger.snapshot(a, pair)
+        .merge(&tagger.snapshot(b, pair))
+        .map(|x| Err(OnlyOne(x)))
         .coalesce(|a, b| match (a, b) {
-            (Some(a), Some(b)) => {
-                if &a == &b { Some(a) } else { None }
-            },
-            _ => None,
+            (Err(OnlyOne(a)), Err(OnlyOne(b))) =>
+                if &a == &b { Ok(true) }
+                else { Err(Mismatch(a, b)) },
+            (Err(Mismatch(a, b)), Err(OnlyOne(_))) => Err(Mismatch(a, b)),
+            (Ok(true), Err(OnlyOne(a))) => Err(OnlyOne(a)),
+            (Err(Other), Err(OnlyOne(_))) => Err(Other),
+            _ => unreachable!(),
         })
-        .scan(true, |state, a| state && a.is_some())
+        .scan(Ok(true), |state, a| state.and(a));
+    lift1(|r| r.map_err(|e| format!("{:?}", e)), &result)
 }
 
 /// A boxed function.
@@ -96,7 +111,7 @@ mod test {
     #[test]
     fn stream_eq_never() {
         let eq = stream_eq(&Stream::<()>::never(), &Stream::never());
-        assert!(eq.sample());
+        assert_eq!(eq.sample(), Ok(true));
     }
 
     #[test]
@@ -104,7 +119,7 @@ mod test {
         let sink = Sink::new();
         let eq = stream_eq(&sink.stream(), &sink.stream());
         for n in 0..20 { sink.send(n); }
-        assert!(eq.sample());
+        assert_eq!(eq.sample(), Ok(true));
     }
 
     #[test]
@@ -116,6 +131,6 @@ mod test {
         let sink = Sink::new();
         let eq = stream_eq(&sink.stream().map(g).map(f), &sink.stream().map(h));
         for n in 0..20 { sink.send(n); }
-        assert!(eq.sample());
+        assert_eq!(eq.sample(), Ok(true));
     }
 }
