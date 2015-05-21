@@ -94,7 +94,7 @@ impl<A: Send + Sync + Clone + 'static> Sink<A> {
     /// Feed values from an iterator into the sink.
     ///
     /// This method feeds events into the sink from an iterator.
-    pub fn feed<I: Iterator<Item=A>>(&self, iterator: I) {
+    pub fn feed<I: IntoIterator<Item=A>>(&self, iterator: I) {
         for event in iterator {
             self.send(event);
         }
@@ -105,7 +105,7 @@ impl<A: Send + Sync + Clone + 'static> Sink<A> {
     /// This is the same as `feed`, but it does not block, since it spawns the
     /// feeding as a new task. This is useful, if the provided iterator is large
     /// or even infinite (e.g. an I/O event loop).
-    pub fn feed_async<I: Iterator<Item=A> + Send + 'static>(&self, iterator: I) {
+    pub fn feed_async<I: IntoIterator<Item=A> + Send + 'static>(&self, iterator: I) {
         let clone = self.clone();
         thread::spawn(move || clone.feed(iterator));
     }
