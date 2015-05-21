@@ -150,6 +150,17 @@ impl<A: Clone + 'static> Signal<A> {
 }
 
 impl<A: Clone + Send + Sync + 'static> Signal<A> {
+    /// Create a signal with a cyclic definition.
+    pub fn cyclic<F>(def: F) -> Signal<A>
+        where F: FnOnce(&SignalCycle<A>) -> Signal<A>
+    {
+        commit(|| {
+            let cycle = SignalCycle::new();
+            let finished = def(&cycle);
+            cycle.define(finished)
+        })
+    }
+
     /// Combine the signal with a stream in a snapshot.
     ///
     /// `snapshot` creates a new stream given a signal and a stream. Whenever
@@ -281,7 +292,7 @@ pub struct SignalCycle<A> {
 
 impl<A: Send + Sync + Clone + 'static> SignalCycle<A> {
     /// Forward-declare a new signal.
-    pub fn new() -> SignalCycle<A> {
+    fn new() -> SignalCycle<A> {
         const ERR: &'static str = "sampled on forward-declaration of signal";
         SignalCycle { signal: Signal::build(SignalFn::from_fn(|| panic!(ERR)), ()) }
     }
