@@ -18,3 +18,4 @@ lazy_static = "0.1.10"
 
 [dev-dependencies]
 rand = "0.3"
+quickcheck = "0.2"

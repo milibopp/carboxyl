@@ -4,8 +4,8 @@ use std::sync::{ Arc, RwLock, Mutex, Weak };
 use std::sync::mpsc::{ Receiver, channel };
 use std::thread;
 use source::{ Source, CallbackError, CallbackResult, with_weak };
-use signal::{ self, Signal, SignalMut };
-use transaction::commit;
+use signal::{ self, Signal, SignalMut, sample_raw };
+use transaction::{ commit, later };
 
 
 /// An event sink.
@@ -142,9 +142,47 @@ pub fn source<A>(stream: &Stream<A>) -> &Arc<RwLock<Source<A>>> {
 }
 
 
-/// A stream of discrete events.
+/// A stream of events.
 ///
-/// This occasionally fires an event of type `A`.
+/// Conceptually a stream can be thought of as a series of discrete events that
+/// occur at specific times. They are ordered by a transaction system. This
+/// means that firings of disjoint events can not interfere with each other. The
+/// consequences of one event are atomically reflected in dependent quantities.
+///
+/// Streams provide a number of primitive operations. These can be used to
+/// compose streams and combine them with signals. For instance, streams can be
+/// mapped over with a function, merged with another stream of the same type or
+/// filtered by some predicate.
+///
+/// # Algebraic laws
+///
+/// Furthermore, streams satisfy certain algebraic properties that are useful to
+/// reason about them.
+///
+/// ## Monoid
+///
+/// For once, streams of the same type form a **monoid** under merging. The
+/// neutral element in this context is `Stream::never()`. So the following laws
+/// always hold for streams `a`, `b` and `c` of the same type:
+///
+/// - Left identity: `Stream::never().merge(&a) == a`,
+/// - Right identity: `a.merge(&Stream::never()) == a`,
+/// - Associativity: `a.merge(&b).merge(&c) == a.merge(&b.merge(&c))`.
+///
+/// *Note that equality in this context is not actually implemented as such,
+/// since comparing two (potentially infinite) streams is a prohibitive
+/// operation. Instead, the expressions above can be used interchangably and
+/// behave identically.*
+///
+/// ## Functor
+///
+/// Under the mapping operation streams also become a functor. A functor is a
+/// generic type like `Stream` with some mapping operation that takes a function
+/// `Fn(A) -> B` to map a `Stream<A>` to a `Stream<B>`. Algebraically it
+/// satisfies the following laws:
+///
+/// - The identity function is preserved: `a.map(|x| x) == a`,
+/// - Function composition is respected: `a.map(f).map(g) == a.map(|x| g(f(x)))`.
 pub struct Stream<A> {
     source: Arc<RwLock<Source<A>>>,
     #[allow(dead_code)]
@@ -268,6 +306,44 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
                 source: src,
                 keep_alive: Box::new((self.clone(), other.clone())),
             }
+        })
+    }
+
+    /// Coalesce multiple event firings within the same transaction into a
+    /// single event.
+    ///
+    /// The function should ideally commute, as the order of events within a
+    /// transaction is not well-defined.
+    pub fn coalesce<F>(&self, f: F) -> Stream<A>
+        where F: Fn(A, A) -> A + Send + Sync + 'static,
+    {
+        commit(|| {
+            let src = Arc::new(RwLock::new(Source::new()));
+            let weak = src.downgrade();
+            self.source.write().unwrap().register({
+                let mutex = Arc::new(Mutex::new(None));
+                move |a| {
+                    let mut inner = mutex.lock().unwrap();
+                    *inner = Some(match inner.take() {
+                        Some(b) => f(a, b),
+                        None => a,
+                    });
+                    // Send the updated value later
+                    later({
+                        let mutex = mutex.clone();
+                        let weak = weak.clone();
+                        move || {
+                            let mut inner = mutex.lock().unwrap();
+                            // Take it out and map, so that it does not happen twice
+                            inner.take().map(|value|
+                                with_weak(&weak, |src| src.send(value))
+                            );
+                        }
+                    });
+                    Ok(())
+                }
+            });
+            Stream { source: src, keep_alive: Box::new(self.clone()) }
         })
     }
 
@@ -450,7 +526,7 @@ pub fn snapshot<A, B, C, F>(signal: &Signal<A>, stream: &Stream<B>, f: F) -> Str
         let weak = src.downgrade();
         stream.source.write().unwrap().register({
             let signal = signal.clone();
-            move |b| with_weak(&weak, |src| src.send(f(signal.sample(), b)))
+            move |b| with_weak(&weak, |src| src.send(f(sample_raw(&signal), b)))
         });
         Stream {
             source: src,
@@ -492,6 +568,10 @@ impl<A: Send + Sync + 'static> Iterator for Events<A> {
 
 #[cfg(test)]
 mod test {
+    use std::thread;
+    use quickcheck::quickcheck;
+
+    use testing::{ id, stream_eq };
     use super::*;
 
     #[test]
@@ -607,5 +687,88 @@ mod test {
         for (n, m) in events.take(10).enumerate() {
             assert_eq!(n as i32, m);
         }
+    }
+
+    #[test]
+    fn coalesce() {
+        let sink = Sink::new();
+        let stream = sink.stream()
+            .merge(&sink.stream())
+            .coalesce(|a, b| a + b);
+        let mut events = stream.events();
+
+        sink.send(1);
+        assert_eq!(events.next(), Some(2));
+    }
+
+    #[test]
+    fn monoid_left_identity() {
+        fn check(input: Vec<i32>) -> Result<bool, String> {
+            let sink = Sink::new();
+            let a = sink.stream();
+            let eq = stream_eq(&Stream::never().merge(&a), &a);
+            sink.feed(input.into_iter());
+            eq.sample()
+        }
+        quickcheck(check as fn(Vec<i32>) -> Result<bool, String>);
+    }
+
+    #[test]
+    fn monoid_right_identity() {
+        fn check(input: Vec<i32>) -> Result<bool, String> {
+            let sink = Sink::new();
+            let a = sink.stream();
+            let eq = stream_eq(&a.merge(&Stream::never()), &a);
+            sink.feed(input.into_iter());
+            eq.sample()
+        }
+        quickcheck(check as fn(Vec<i32>) -> Result<bool, String>);
+    }
+
+    #[test]
+    fn monoid_associative() {
+        fn check(input_a: Vec<i32>, input_b: Vec<i32>, input_c: Vec<i32>) -> Result<bool, String> {
+            let sink_a = Sink::new();
+            let sink_b = Sink::new();
+            let sink_c = Sink::new();
+            let a = sink_a.stream();
+            let b = sink_b.stream();
+            let c = sink_c.stream();
+            let eq = stream_eq(&a.merge(&b.merge(&c)), &a.merge(&b).merge(&c));
+            /* feed in parallel */ {
+                let _g1 = thread::scoped(|| sink_a.feed(input_a.into_iter()));
+                let _g2 = thread::scoped(|| sink_b.feed(input_b.into_iter()));
+                let _g3 = thread::scoped(|| sink_c.feed(input_c.into_iter()));
+            }
+            eq.sample()
+        }
+        quickcheck(check as fn(Vec<i32>, Vec<i32>, Vec<i32>) -> Result<bool, String>);
+    }
+
+    #[test]
+    fn functor_identity() {
+        fn check(input: Vec<i32>) -> Result<bool, String> {
+            let sink = Sink::new();
+            let a = sink.stream();
+            let eq = stream_eq(&a.map(id), &a);
+            sink.feed(input.into_iter());
+            eq.sample()
+        }
+        quickcheck(check as fn(Vec<i32>) -> Result<bool, String>);
+    }
+
+    #[test]
+    fn functor_composition() {
+        fn check(input: Vec<i32>) -> Result<bool, String> {
+            fn f(n: i32) -> i64 { (n + 3) as i64 }
+            fn g(n: i64) -> f64 { n as f64 / 2.5 }
+
+            let sink = Sink::new();
+            let a = sink.stream();
+            let eq = stream_eq(&a.map(f).map(g), &a.map(|n| g(f(n))));
+            sink.feed(input.into_iter());
+            eq.sample()
+        }
+        quickcheck(check as fn(Vec<i32>) -> Result<bool, String>);
     }
 }
