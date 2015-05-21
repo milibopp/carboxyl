@@ -194,8 +194,18 @@ impl<A: Clone + 'static> Signal<A> {
 
 impl<A: Clone + Send + Sync + 'static> Signal<A> {
     /// Create a signal with a cyclic definition.
+    ///
+    /// The closure gets an undefined forward-declaration of a signal. It is
+    /// supposed to return a self-referential definition of the same signal.
+    ///
+    /// Sampling the forward-declared signal, before it is properly defined,
+    /// will cause a run-time panic.
+    ///
+    /// This pattern is useful to implement accumulators, counters and other
+    /// loops that depend on the sampling behaviour of a signal before a
+    /// transaction.
     pub fn cyclic<F>(def: F) -> Signal<A>
-        where F: FnOnce(&SignalCycle<A>) -> Signal<A>
+        where F: FnOnce(&Signal<A>) -> Signal<A>
     {
         commit(|| {
             let cycle = SignalCycle::new();
@@ -367,16 +377,13 @@ impl<A: fmt::Debug + Clone + 'static> fmt::Debug for Signal<A> {
 
 
 /// Forward declaration of a signal to create value loops.
-///
-/// This pattern is useful to implement accumulators, counters and other loops
-/// that depend on the sampling behaviour of a signal before a transaction.
-pub struct SignalCycle<A> {
+struct SignalCycle<A> {
     signal: Signal<A>,
 }
 
 impl<A: Send + Sync + Clone + 'static> SignalCycle<A> {
     /// Forward-declare a new signal.
-    fn new() -> SignalCycle<A> {
+    pub fn new() -> SignalCycle<A> {
         const ERR: &'static str = "sampled on forward-declaration of signal";
         SignalCycle { signal: Signal::build(SignalFn::from_fn(|| panic!(ERR)), ()) }
     }
@@ -723,5 +730,23 @@ mod test {
         let mut events = signal.snapshot(&first, |a, b| (a, b)).events();
         sink.send(1);
         assert_eq!(events.next(), Some((0, 1)));
+    }
+
+    #[test]
+    fn cyclic_signal_intermediate() {
+        let sink = Sink::new();
+        let stream = sink.stream();
+        let mut snap = None;
+        let sum = Signal::cyclic(|a| {
+            let my_snap = a.snapshot(&stream, |a, e| e + a);
+            snap = Some(my_snap.clone());
+            my_snap.hold(0)
+        });
+        let snap = snap.unwrap();
+        let mut events = snap.events();
+
+        sink.send(3);
+        assert_eq!(sum.sample(), 3);
+        assert_eq!(events.next(), Some(3));
     }
 }
