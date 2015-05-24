@@ -1,6 +1,6 @@
 [package]
 name = "carboxyl"
-version = "0.0.11"
+version = "0.1.0"
 authors = ["Eduard Bopp <eduard.bopp@aepsil0n.de>"]
 description = "Library for functional reactive programming"
 documentation = "https://aepsil0n.github.io/carboxyl/"
@@ -9,9 +9,6 @@ repository = "https://github.com/aepsil0n/carboxyl"
 readme = "README.md"
 keywords = ["frp", "reactive", "event", "concurrency"]
 license = "LGPL-3.0+"
-
-[features]
-unstable = []
 
 [dependencies]
 lazy_static = "0.1.10"
