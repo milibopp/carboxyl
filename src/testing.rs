@@ -55,7 +55,7 @@ pub fn stream_eq<T>(a: &Stream<T>, b: &Stream<T>) -> Signal<Result<bool, String>
 }
 
 /// A boxed function.
-pub type ArcFn<A, B> = Arc<Box<Fn(A) -> B + Send + Sync + 'static>>;
+pub type ArcFn<A, B> = Arc<Fn(A) -> B + Send + Sync + 'static>;
 
 /// Wrap a function into a constant signal of that function.
 pub fn pure_fn<A, B, F: Fn(A) -> B + Send + Sync + 'static>(f: F) -> Signal<ArcFn<A, B>> {
@@ -64,7 +64,7 @@ pub fn pure_fn<A, B, F: Fn(A) -> B + Send + Sync + 'static>(f: F) -> Signal<ArcF
 
 /// Box a function to erase its type.
 pub fn make_fn<A, B, F: Fn(A) -> B + Send + Sync + 'static>(f: F) -> ArcFn<A, B> {
-    Arc::new(Box::new(f))
+    Arc::new(f)
 }
 
 /// Function composition on boxed functions.
