@@ -24,7 +24,6 @@ pub fn signal_eq<T>(a: &Signal<T>, b: &Signal<T>) -> Signal<bool>
 enum EquivError<T> {
     Mismatch(T, T),
     OnlyOne(T),
-    Other,
 }
 
 /// Simple pairing function.
@@ -47,7 +46,6 @@ pub fn stream_eq<T>(a: &Stream<T>, b: &Stream<T>) -> Signal<Result<bool, String>
                 else { Err(Mismatch(a, b)) },
             (Err(Mismatch(a, b)), Err(OnlyOne(_))) => Err(Mismatch(a, b)),
             (Ok(true), Err(OnlyOne(a))) => Err(OnlyOne(a)),
-            (Err(Other), Err(OnlyOne(_))) => Err(Other),
             _ => unreachable!(),
         })
         .scan(Ok(true), |state, a| state.and(a));
