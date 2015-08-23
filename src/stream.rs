@@ -703,31 +703,31 @@ mod test {
 
     #[test]
     fn monoid_left_identity() {
-        fn check(input: Vec<i32>) -> Result<bool, String> {
+        fn check(input: Vec<i32>) -> Result<(), String> {
             let sink = Sink::new();
             let a = sink.stream();
             let eq = stream_eq(&Stream::never().merge(&a), &a);
             sink.feed(input.into_iter());
             eq.sample()
         }
-        quickcheck(check as fn(Vec<i32>) -> Result<bool, String>);
+        quickcheck(check as fn(Vec<i32>) -> Result<(), String>);
     }
 
     #[test]
     fn monoid_right_identity() {
-        fn check(input: Vec<i32>) -> Result<bool, String> {
+        fn check(input: Vec<i32>) -> Result<(), String> {
             let sink = Sink::new();
             let a = sink.stream();
             let eq = stream_eq(&a.merge(&Stream::never()), &a);
             sink.feed(input.into_iter());
             eq.sample()
         }
-        quickcheck(check as fn(Vec<i32>) -> Result<bool, String>);
+        quickcheck(check as fn(Vec<i32>) -> Result<(), String>);
     }
 
     #[test]
     fn monoid_associative() {
-        fn check(input_a: Vec<i32>, input_b: Vec<i32>, input_c: Vec<i32>) -> Result<bool, String> {
+        fn check(input_a: Vec<i32>, input_b: Vec<i32>, input_c: Vec<i32>) -> Result<(), String> {
             let sink_a = Sink::new();
             let sink_b = Sink::new();
             let sink_c = Sink::new();
@@ -742,24 +742,24 @@ mod test {
             thread::sleep_ms(1);
             eq.sample()
         }
-        quickcheck(check as fn(Vec<i32>, Vec<i32>, Vec<i32>) -> Result<bool, String>);
+        quickcheck(check as fn(Vec<i32>, Vec<i32>, Vec<i32>) -> Result<(), String>);
     }
 
     #[test]
     fn functor_identity() {
-        fn check(input: Vec<i32>) -> Result<bool, String> {
+        fn check(input: Vec<i32>) -> Result<(), String> {
             let sink = Sink::new();
             let a = sink.stream();
             let eq = stream_eq(&a.map(id), &a);
             sink.feed(input.into_iter());
             eq.sample()
         }
-        quickcheck(check as fn(Vec<i32>) -> Result<bool, String>);
+        quickcheck(check as fn(Vec<i32>) -> Result<(), String>);
     }
 
     #[test]
     fn functor_composition() {
-        fn check(input: Vec<i32>) -> Result<bool, String> {
+        fn check(input: Vec<i32>) -> Result<(), String> {
             fn f(n: i32) -> i64 { (n + 3) as i64 }
             fn g(n: i64) -> f64 { n as f64 / 2.5 }
 
@@ -769,6 +769,6 @@ mod test {
             sink.feed(input.into_iter());
             eq.sample()
         }
-        quickcheck(check as fn(Vec<i32>) -> Result<bool, String>);
+        quickcheck(check as fn(Vec<i32>) -> Result<(), String>);
     }
 }
