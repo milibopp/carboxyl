@@ -134,7 +134,7 @@
 //! (An exception here is debugging output.)
 
 #![feature(arc_weak, fnbox)]
-#![cfg_attr(test, feature(test, scoped))]
+#![cfg_attr(test, feature(test))]
 #![warn(missing_docs)]
 
 #[cfg(test)]
