@@ -81,14 +81,14 @@ mod test {
     #[test]
     fn with_weak_no_error() {
         let a = Arc::new(RwLock::new(3));
-        let weak = a.downgrade();
+        let weak = Arc::downgrade(&a);
         assert_eq!(with_weak(&weak, |a| { *a = 4; }), Ok(()));
         assert_eq!(*a.read().unwrap(), 4);
     }
 
     #[test]
     fn with_weak_disappeared() {
-        let weak = Arc::new(RwLock::new(3)).downgrade();
+        let weak = Arc::downgrade(&Arc::new(RwLock::new(3)));
         assert_eq!(with_weak(&weak, |_| ()), Err(CallbackError::Disappeared));
     }
 
@@ -96,7 +96,7 @@ mod test {
     fn with_weak_poisoned() {
         let a = Arc::new(RwLock::new(3));
         let a2 = a.clone();
-        let weak = a.downgrade();
+        let weak = Arc::downgrade(&a);
         let _ = thread::spawn(move || {
             let _g = a2.write().unwrap();
             panic!();
