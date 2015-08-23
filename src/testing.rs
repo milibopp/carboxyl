@@ -32,7 +32,7 @@ fn pair<T, U>(t: T, u: U) -> (T, U) {
 }
 
 /// Trace equality of two streams.
-pub fn stream_eq<T>(a: &Stream<T>, b: &Stream<T>) -> Signal<Result<bool, String>>
+pub fn stream_eq<T>(a: &Stream<T>, b: &Stream<T>) -> Signal<Result<(), String>>
     where T: PartialEq + Clone + Send + Sync + 'static + Debug,
 {
     use self::EquivError::*;
@@ -42,13 +42,13 @@ pub fn stream_eq<T>(a: &Stream<T>, b: &Stream<T>) -> Signal<Result<bool, String>
         .map(|x| Err(OnlyOne(x)))
         .coalesce(|a, b| match (a, b) {
             (Err(OnlyOne(a)), Err(OnlyOne(b))) =>
-                if &a == &b { Ok(true) }
+                if &a == &b { Ok(()) }
                 else { Err(Mismatch(a, b)) },
             (Err(Mismatch(a, b)), Err(OnlyOne(_))) => Err(Mismatch(a, b)),
-            (Ok(true), Err(OnlyOne(a))) => Err(OnlyOne(a)),
+            (Ok(()), Err(OnlyOne(a))) => Err(OnlyOne(a)),
             _ => unreachable!(),
         })
-        .scan(Ok(true), |state, a| state.and(a));
+        .scan(Ok(()), |state, a| state.and(a));
     lift1(|r| r.map_err(|e| format!("{:?}", e)), &result)
 }
 
@@ -121,7 +121,7 @@ mod test {
     #[test]
     fn stream_eq_never() {
         let eq = stream_eq(&Stream::<()>::never(), &Stream::never());
-        assert_eq!(eq.sample(), Ok(true));
+        assert_eq!(eq.sample(), Ok(()));
     }
 
     #[test]
@@ -129,7 +129,7 @@ mod test {
         let sink = Sink::new();
         let eq = stream_eq(&sink.stream(), &sink.stream());
         for n in 0..20 { sink.send(n); }
-        assert_eq!(eq.sample(), Ok(true));
+        assert_eq!(eq.sample(), Ok(()));
     }
 
     #[test]
@@ -141,6 +141,6 @@ mod test {
         let sink = Sink::new();
         let eq = stream_eq(&sink.stream().map(g).map(f), &sink.stream().map(h));
         for n in 0..20 { sink.send(n); }
-        assert_eq!(eq.sample(), Ok(true));
+        assert_eq!(eq.sample(), Ok(()));
     }
 }
