@@ -56,22 +56,34 @@ pub fn stream_eq<T>(a: &Stream<T>, b: &Stream<T>) -> Signal<Result<bool, String>
 pub type ArcFn<A, B> = Arc<Fn(A) -> B + Send + Sync + 'static>;
 
 /// Wrap a function into a constant signal of that function.
-pub fn pure_fn<A, B, F: Fn(A) -> B + Send + Sync + 'static>(f: F) -> Signal<ArcFn<A, B>> {
+pub fn pure_fn<A, B, F>(f: F) -> Signal<ArcFn<A, B>>
+    where A: 'static,
+          B: 'static,
+          F: Fn(A) -> B + Send + Sync + 'static,
+{
     Signal::new(make_fn(f))
 }
 
 /// Box a function to erase its type.
-pub fn make_fn<A, B, F: Fn(A) -> B + Send + Sync + 'static>(f: F) -> ArcFn<A, B> {
+pub fn make_fn<A, B, F>(f: F) -> ArcFn<A, B>
+    where A: 'static,
+          B: 'static,
+          F: Fn(A) -> B + Send + Sync + 'static,
+{
     Arc::new(f)
 }
 
 /// Function composition on boxed functions.
-pub fn comp<A, B, C>(f: ArcFn<B, C>, g: ArcFn<A, B>) -> ArcFn<A, C> {
+pub fn comp<A, B, C>(f: ArcFn<B, C>, g: ArcFn<A, B>) -> ArcFn<A, C>
+    where A: 'static, B: 'static, C: 'static
+{
     make_fn(move |a| f(g(a)))
 }
 
 /// Partially applied function composition.
-pub fn partial_comp<A, B, C>(f: ArcFn<B, C>) -> ArcFn<ArcFn<A, B>, ArcFn<A, C>> {
+pub fn partial_comp<A, B, C>(f: ArcFn<B, C>) -> ArcFn<ArcFn<A, B>, ArcFn<A, C>>
+    where A: 'static, B: 'static, C: 'static
+{
     make_fn(move |g| comp(f.clone(), g))
 }
 
