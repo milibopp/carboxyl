@@ -81,8 +81,8 @@ pub fn reg_signal<A, B, F>(parent_source: &mut Source<A>, signal: &Signal<B>, ha
           B: Send + Sync + 'static,
           F: Fn(A) -> SignalFn<B> + Send + Sync + 'static,
 {
-    let weak_source = signal.source.downgrade();
-    let weak_current = signal.current.downgrade();
+    let weak_source = Arc::downgrade(&signal.source);
+    let weak_current = Arc::downgrade(&signal.current);
     parent_source.register(move |a|
         weak_current.upgrade().map(|cur| end(
             move || { let _ = cur.write().map(|mut cur| cur.update()); }))
@@ -397,7 +397,7 @@ impl<A: Send + Sync + Clone + 'static> SignalCycle<A> {
             match *current_def.read().unwrap().future() {
                 SignalFn::Const(ref a) => SignalFn::Const(a.clone()),
                 SignalFn::Func(_) => SignalFn::from_fn({
-                    let sig = current_def.downgrade();
+                    let sig = Arc::downgrade(&current_def);
                     move || {
                         let strong = sig.upgrade().unwrap();
                         let ret = strong.read().unwrap().call();
@@ -408,7 +408,7 @@ impl<A: Send + Sync + Clone + 'static> SignalCycle<A> {
         }
         commit(move || {
             *self.signal.current.write().unwrap() = Pending::new(make_callback(&definition.current));
-            let weak_parent = definition.current.downgrade();
+            let weak_parent = Arc::downgrade(&definition.current);
             reg_signal(&mut definition.source.write().unwrap(), &self.signal,
                 move |_| make_callback(&weak_parent.upgrade().unwrap()));
             Signal { keep_alive: Box::new(definition), ..self.signal }

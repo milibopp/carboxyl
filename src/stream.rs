@@ -227,7 +227,7 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
     {
         commit(|| {
             let src = Arc::new(RwLock::new(Source::new()));
-            let weak = src.downgrade();
+            let weak = Arc::downgrade(&src);
             self.source.write().unwrap()
                 .register(move |a| with_weak(&weak, |src| src.send(f(a))));
             Stream {
@@ -298,7 +298,7 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
         commit(|| {
             let src = Arc::new(RwLock::new(Source::new()));
             for parent in [self, other].iter() {
-                let weak = src.downgrade();
+                let weak = Arc::downgrade(&src);
                 parent.source.write().unwrap()
                     .register(move |a| with_weak(&weak, |src| src.send(a)));
             }
@@ -319,7 +319,7 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
     {
         commit(|| {
             let src = Arc::new(RwLock::new(Source::new()));
-            let weak = src.downgrade();
+            let weak = Arc::downgrade(&src);
             self.source.write().unwrap().register({
                 let mutex = Arc::new(Mutex::new(None));
                 move |a| {
@@ -437,7 +437,7 @@ impl<A: Clone + Send + Sync + 'static> Stream<Option<A>> {
     pub fn filter_some(&self) -> Stream<A> {
         commit(|| {
             let src = Arc::new(RwLock::new(Source::new()));
-            let weak = src.downgrade();
+            let weak = Arc::downgrade(&src);
             self.source.write().unwrap()
                 .register(move |a| a.map_or(
                     Ok(()),
@@ -490,7 +490,7 @@ impl<A: Send + Sync + Clone + 'static> Stream<Stream<A>> {
             where A: Send + Sync + Clone + 'static,
         {
             *terminate = Arc::new(());
-            let weak = terminate.downgrade();
+            let weak = Arc::downgrade(&terminate);
             new_stream.source.write().unwrap().register(move |a|
                 weak.upgrade()
                     .ok_or(CallbackError::Disappeared)
@@ -500,7 +500,7 @@ impl<A: Send + Sync + Clone + 'static> Stream<Stream<A>> {
         }
         commit(|| {
             let src = Arc::new(RwLock::new(Source::new()));
-            let weak = src.downgrade();
+            let weak = Arc::downgrade(&src);
             self.source.write().unwrap().register({
                 let mut terminate = Arc::new(());
                 move |stream| rewire_callbacks(stream, weak.clone(), &mut terminate)
@@ -523,7 +523,7 @@ pub fn snapshot<A, B, C, F>(signal: &Signal<A>, stream: &Stream<B>, f: F) -> Str
 {
     commit(|| {
         let src = Arc::new(RwLock::new(Source::new()));
-        let weak = src.downgrade();
+        let weak = Arc::downgrade(&src);
         stream.source.write().unwrap().register({
             let signal = signal.clone();
             move |b| with_weak(&weak, |src| src.send(f(sample_raw(&signal), b)))
@@ -735,11 +735,11 @@ mod test {
             let b = sink_b.stream();
             let c = sink_c.stream();
             let eq = stream_eq(&a.merge(&b.merge(&c)), &a.merge(&b).merge(&c));
-            /* feed in parallel */ {
-                let _g1 = thread::scoped(|| sink_a.feed(input_a.into_iter()));
-                let _g2 = thread::scoped(|| sink_b.feed(input_b.into_iter()));
-                let _g3 = thread::scoped(|| sink_c.feed(input_c.into_iter()));
-            }
+            // TODO: replace this spawn & wait mechanism by scoped threads
+            thread::spawn(move || sink_a.feed(input_a.into_iter()));
+            thread::spawn(move || sink_b.feed(input_b.into_iter()));
+            thread::spawn(move || sink_c.feed(input_c.into_iter()));
+            thread::sleep_ms(1);
             eq.sample()
         }
         quickcheck(check as fn(Vec<i32>, Vec<i32>, Vec<i32>) -> Result<bool, String>);
