@@ -133,11 +133,8 @@
 //! the FRP primitives, as they break the benefits you get from using FRP.
 //! (An exception here is debugging output.)
 
-#![cfg_attr(test, feature(test))]
 #![warn(missing_docs)]
 
-#[cfg(test)]
-extern crate test;
 #[cfg(test)]
 extern crate rand;
 #[cfg(test)]
