@@ -133,12 +133,8 @@
 //! the FRP primitives, as they break the benefits you get from using FRP.
 //! (An exception here is debugging output.)
 
-#![feature(arc_weak, fnbox)]
-#![cfg_attr(test, feature(test))]
 #![warn(missing_docs)]
 
-#[cfg(test)]
-extern crate test;
 #[cfg(test)]
 extern crate rand;
 #[cfg(test)]
@@ -155,6 +151,7 @@ mod pending;
 mod readonly;
 mod stream;
 mod signal;
+mod fnbox;
 #[macro_use]
 pub mod lift;
 #[cfg(test)]
