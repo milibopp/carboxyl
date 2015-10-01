@@ -133,7 +133,6 @@
 //! the FRP primitives, as they break the benefits you get from using FRP.
 //! (An exception here is debugging output.)
 
-#![feature(fnbox)]
 #![cfg_attr(test, feature(test))]
 #![warn(missing_docs)]
 
@@ -155,6 +154,7 @@ mod pending;
 mod readonly;
 mod stream;
 mod signal;
+mod fnbox;
 #[macro_use]
 pub mod lift;
 #[cfg(test)]
