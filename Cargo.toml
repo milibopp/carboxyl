@@ -1,6 +1,6 @@
 [package]
 name = "carboxyl"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Eduard Bopp <eduard.bopp@aepsil0n.de>"]
 description = "Library for functional reactive programming"
 documentation = "https://aepsil0n.github.io/carboxyl/"
