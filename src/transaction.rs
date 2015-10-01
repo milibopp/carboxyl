@@ -5,7 +5,7 @@
 
 use std::sync::Mutex;
 use std::cell::RefCell;
-use std::boxed::FnBox;
+use ::fnbox::FnBox;
 
 
 /// The global transaction lock.
@@ -24,7 +24,7 @@ thread_local!(
 
 
 /// A callback.
-type Callback = Box<FnBox() + 'static>;
+type Callback = Box<FnBox + 'static>;
 
 
 /// A transaction.
@@ -66,7 +66,7 @@ impl Transaction {
     /// Finalize the transaction
     fn finalize(self) {
         for finalizer in self.finalizers {
-            finalizer.call_box(());
+            finalizer.call_box();
         }
     }
 }
@@ -99,7 +99,7 @@ pub fn commit<A, F: FnOnce() -> A>(body: F) -> A {
         let callbacks = with_current(Transaction::advance);
         if callbacks.is_empty() { break }
         for callback in callbacks {
-            callback.call_box(());
+            callback.call_box();
         }
     }
     // Call all finalizers and drop the transaction

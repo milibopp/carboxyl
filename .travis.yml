@@ -5,7 +5,7 @@ rust:
 
 before_script:
   - |
-    pip install 'travis-cargo==0.1.2' --user &&
+    pip install 'travis-cargo==0.1.8' --user &&
     export PATH=$HOME/.local/bin:$PATH
 
 script:
@@ -14,7 +14,6 @@ script:
     cargo --version
     travis-cargo build &&
     travis-cargo test &&
-    travis-cargo bench &&
     travis-cargo doc
 
 after_success:
