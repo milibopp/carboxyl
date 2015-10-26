@@ -260,7 +260,7 @@ impl<A: Clone + Send + Sync + 'static> Signal<Signal<A>> {
     /// ```
     /// # use carboxyl::Sink;
     /// // Button type
-    /// #[derive(Clone, Show)]
+    /// #[derive(Clone)]
     /// enum Button { A, B };
     ///
     /// // The input sinks
