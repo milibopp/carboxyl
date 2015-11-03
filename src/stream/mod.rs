@@ -5,7 +5,10 @@ use std::sync::mpsc::{ Receiver, channel };
 use std::thread;
 use source::{ Source, CallbackError, CallbackResult, with_weak };
 use signal::{ self, Signal, SignalMut, sample_raw };
-use transaction::{ commit, later };
+use transaction::commit;
+
+
+mod coalesce;
 
 
 /// An event sink.
@@ -198,6 +201,7 @@ impl<A> Clone for Stream<A> {
     }
 }
 
+
 impl<A: Clone + Send + Sync + 'static> Stream<A> {
     /// Create a stream that never fires. This can be useful in certain
     /// situations, where a stream is logically required, but no events are
@@ -314,37 +318,10 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
     ///
     /// The function should ideally commute, as the order of events within a
     /// transaction is not well-defined.
-    pub fn coalesce<F>(&self, f: F) -> Stream<A>
+    pub fn coalesce<F>(&self, reducer: F) -> Stream<A>
         where F: Fn(A, A) -> A + Send + Sync + 'static,
     {
-        commit(|| {
-            let src = Arc::new(RwLock::new(Source::new()));
-            let weak = Arc::downgrade(&src);
-            self.source.write().unwrap().register({
-                let mutex = Arc::new(Mutex::new(None));
-                move |a| {
-                    let mut inner = mutex.lock().unwrap();
-                    *inner = Some(match inner.take() {
-                        Some(b) => f(a, b),
-                        None => a,
-                    });
-                    // Send the updated value later
-                    later({
-                        let mutex = mutex.clone();
-                        let weak = weak.clone();
-                        move || {
-                            let mut inner = mutex.lock().unwrap();
-                            // Take it out and map, so that it does not happen twice
-                            inner.take().map(|value|
-                                with_weak(&weak, |src| src.send(value))
-                            );
-                        }
-                    });
-                    Ok(())
-                }
-            });
-            Stream { source: src, keep_alive: Box::new(self.clone()) }
-        })
+        commit(|| coalesce::stream(self, reducer))
     }
 
     /// Hold an event in a signal.
