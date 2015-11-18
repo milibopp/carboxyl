@@ -1,3 +1,4 @@
+[![Stories in Ready](https://badge.waffle.io/aepsil0n/carboxyl.png?label=ready&title=Ready)](https://waffle.io/aepsil0n/carboxyl)
 [![Build Status](https://img.shields.io/travis/aepsil0n/carboxyl.svg)](https://travis-ci.org/aepsil0n/carboxyl)
 [![](https://img.shields.io/crates/v/carboxyl.svg)](https://crates.io/crates/carboxyl)
 
