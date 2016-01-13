@@ -2,6 +2,8 @@ language: rust
 
 rust:
   - nightly
+  - beta
+  - stable
 
 before_script:
   - |
