@@ -546,6 +546,7 @@ impl<A: Send + Sync + 'static> Iterator for Events<A> {
 #[cfg(test)]
 mod test {
     use std::thread;
+    use std::time::Duration;
     use quickcheck::quickcheck;
 
     use testing::{ id, stream_eq };
@@ -716,7 +717,7 @@ mod test {
             thread::spawn(move || sink_a.feed(input_a.into_iter()));
             thread::spawn(move || sink_b.feed(input_b.into_iter()));
             thread::spawn(move || sink_c.feed(input_c.into_iter()));
-            thread::sleep_ms(1);
+            thread::sleep(Duration::from_millis(1));
             eq.sample()
         }
         quickcheck(check as fn(Vec<i32>, Vec<i32>, Vec<i32>) -> Result<(), String>);
