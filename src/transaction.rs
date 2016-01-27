@@ -156,6 +156,7 @@ mod test {
     fn commits_parallel() {
         use std::sync::{Arc, Mutex};
         use std::thread;
+        use std::time::Duration;
 
         // Set up a ref-counted value
         let v = Arc::new(Mutex::new(3));
@@ -168,7 +169,7 @@ mod test {
                     // not rely on the local locks here
                     *v.lock().unwrap() *= 2;
                     // …and sleep for a bit
-                    thread::sleep_ms(1);
+                    thread::sleep(Duration::from_millis(1));
                     *v.lock().unwrap() -= 1;
                 }))
             })
