@@ -16,7 +16,7 @@ use testing::ArcFn;
 
 
 /// A functional signal. Caches its return value during a transaction.
-struct FuncSignal<A> {
+pub struct FuncSignal<A> {
     func: Box<Fn() -> A + Send + Sync + 'static>,
     cache: Arc<Mutex<Option<A>>>,
 }
