@@ -20,9 +20,9 @@ create a *stream* of events. Streams can also be filtered, mapped and merged. A
 hold the last event from a stream in a signal.
 
 ```rust
-use carboxyl::Sink;
+extern crate carboxyl;
 
-let sink = Sink::new();
+let sink = carboxyl::Sink::new();
 let stream = sink.stream();
 let signal = stream.hold(3);
 
@@ -38,15 +38,23 @@ One can also directly iterate over the stream instead of holding it in a
 signal:
 
 ```rust
+extern crate carboxyl;
+let sink = carboxyl::Sink::new();
+let stream = sink.stream();
+
 let mut events = stream.events();
 sink.send(4);
 assert_eq!(events.next(), Some(4));
 ```
 
-Streams and signals can be combined using various primitives. We can map a stream
-to another stream using a function:
+Streams and signals can be combined using various primitives. We can map a
+stream to another stream using a function:
 
 ```rust
+extern crate carboxyl;
+let sink = carboxyl::Sink::new();
+let stream = sink.stream();
+
 let squares = stream.map(|x| x * x).hold(0);
 sink.send(4);
 assert_eq!(squares.sample(), 16);
@@ -56,6 +64,10 @@ Or we can filter a stream to create a new one that only contains events that
 satisfy a certain predicate:
 
 ```rust
+extern crate carboxyl;
+let sink = carboxyl::Sink::new();
+let stream = sink.stream();
+
 let negatives = stream.filter(|&x| x < 0).hold(0);
 
 // This won't arrive at the signal.
