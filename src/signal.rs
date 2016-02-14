@@ -10,7 +10,6 @@ use source::{ Source, with_weak, CallbackError };
 use stream::{ self, BoxClone, Stream };
 use transaction::{ commit, end };
 use pending::Pending;
-#[cfg(test)]
 use lift;
 #[cfg(test)]
 use testing::ArcFn;
@@ -242,6 +241,16 @@ impl<A: Clone + Send + Sync + 'static> Signal<A> {
               F: Fn(A, B) -> C + Send + Sync + 'static,
     {
         stream::snapshot(self, stream, f)
+    }
+
+    /// Map a signal using a function.
+    ///
+    /// Same as `lift!` with a single argument signal.
+    pub fn map<B, F>(&self, function: F) -> Signal<B>
+        where B: Clone + Send + Sync + 'static,
+              F: Fn(A) -> B + Send + Sync + 'static
+    {
+        lift::lift1(function, self)
     }
 }
 
