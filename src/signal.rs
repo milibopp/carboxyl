@@ -10,7 +10,7 @@ use source::{ Source, with_weak, CallbackError };
 use stream::{ self, BoxClone, Stream };
 use transaction::{ commit, end };
 use pending::Pending;
-use readonly::{ self, ReadOnly };
+#[cfg(test)]
 use lift;
 #[cfg(test)]
 use testing::ArcFn;
@@ -422,105 +422,6 @@ impl<A> Deref for SignalCycle<A> {
 }
 
 
-/// Signal variant using inner mutability for efficient in-place updates.
-///
-/// This is the only kind of primitive that allows non-`Clone` types to be
-/// wrapped into functional reactive abstractions. The API is somewhat different
-/// from that of a regular signal to accommodate this.
-///
-/// One cannot directly sample a `SignalMut` as this would require a clone.
-/// Instead it comes with a couple of adaptor methods that mimick a subset of
-/// the `Signal` API. However, all functions passed to these methods take the
-/// argument coming from the `SignalMut` by reference.
-pub struct SignalMut<A> {
-    inner: Signal<ReadOnly<A>>,
-}
-
-impl<A: Send + Sync + 'static> SignalMut<A> {
-    /// Semantically the same as `Signal::snapshot`
-    ///
-    /// The key difference here is, that the combining function takes its first
-    /// argument by reference, as it can't be moved out of the `SignalMut`.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use carboxyl::Sink;
-    /// let sink1 = Sink::new();
-    /// let sink2 = Sink::new();
-    /// // Collect values in a mutable `Vec`
-    /// let values = sink1.stream().scan_mut(vec![], |v, a| v.push(a));
-    /// // Snapshot some value from it
-    /// let mut index = values.snapshot(&sink2.stream(),
-    ///     |v, k| v.get(k).map(|x| *x)
-    /// ).events();
-    ///
-    /// sink1.send(4);
-    /// sink1.send(5);
-    /// sink2.send(0);
-    /// assert_eq!(index.next(), Some(Some(4)));
-    ///
-    /// sink2.send(1);
-    /// assert_eq!(index.next(), Some(Some(5)));
-    ///
-    /// sink2.send(2);
-    /// assert_eq!(index.next(), Some(None));
-    /// ```
-    pub fn snapshot<B, C, F>(&self, stream: &Stream<B>, f: F) -> Stream<C>
-        where B: Clone + Send + Sync + 'static,
-              C: Clone + Send + Sync + 'static,
-              F: Fn(&A, B) -> C + Send + Sync + 'static,
-    {
-        self.inner.snapshot(stream, move |a, b| f(&a.read().unwrap(), b))
-    }
-
-    /// Similar to `lift2`. Combines a `SignalMut` with a `Signal` using a
-    /// function. The function takes its first argument by reference.
-    pub fn combine<B, C, F>(&self, signal: &Signal<B>, f: F) -> Signal<C>
-        where B: Clone + Send + Sync + 'static,
-              C: Clone + Send + Sync + 'static,
-              F: Fn(&A, B) -> C + Send + Sync + 'static,
-    {
-        lift::lift2(
-            move |a, b| f(&a.read().unwrap(), b),
-            &self.inner, &signal
-        )
-    }
-
-    /// Similar to `lift2`, but combines two `SignalMut` using a function. The
-    /// supplied function takes both arguments by reference.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use carboxyl::Sink;
-    /// let sink: Sink<i32> = Sink::new();
-    /// let sum = sink.stream().scan_mut(0, |sum, a| *sum += a);
-    /// let product = sink.stream().scan_mut(1, |prod, a| *prod *= a);
-    /// let combo = sum.combine_mut(&product, |s, p| (*s, *p));
-    ///
-    /// sink.send(1);
-    /// assert_eq!(combo.sample(), (1, 1));
-    ///
-    /// sink.send(3);
-    /// assert_eq!(combo.sample(), (4, 3));
-    ///
-    /// sink.send(5);
-    /// assert_eq!(combo.sample(), (9, 15));
-    /// ```
-    pub fn combine_mut<B, C, F>(&self, other: &SignalMut<B>, f: F) -> Signal<C>
-        where B: Clone + Send + Sync + 'static,
-              C: Clone + Send + Sync + 'static,
-              F: Fn(&A, &B) -> C + Send + Sync + 'static,
-    {
-        lift::lift2(
-            move |a, b| f(&a.read().unwrap(), &b.read().unwrap()),
-            &self.inner, &other.inner
-        )
-    }
-}
-
-
 /// Same as Stream::hold.
 pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
     where A: Send + Sync + 'static,
@@ -529,22 +430,6 @@ pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
         let signal = Signal::build(SignalFn::Const(initial), stream.clone());
         reg_signal(&mut stream::source(&stream).write().unwrap(), &signal, SignalFn::Const);
         signal
-    })
-}
-
-
-/// Same as Stream::scan_mut.
-pub fn scan_mut<A, B, F>(stream: &Stream<A>, initial: B, f: F) -> SignalMut<B>
-    where A: Send + Sync + 'static,
-          B: Send + Sync + 'static,
-          F: Fn(&mut B, A) + Send + Sync + 'static,
-{
-    commit(move || {
-        let state = Arc::new(RwLock::new(initial));
-        let signal = Signal::build(SignalFn::Const(readonly::create(state.clone())), stream.clone());
-        reg_signal(&mut stream::source(&stream).write().unwrap(), &signal,
-            move |a| { f(&mut state.write().unwrap(), a); SignalFn::Const(readonly::create(state.clone())) });
-        SignalMut { inner: signal }
     })
 }
 

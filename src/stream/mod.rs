@@ -4,7 +4,7 @@ use std::sync::{ Arc, RwLock, Mutex, Weak };
 use std::sync::mpsc::{ Receiver, channel };
 use std::thread;
 use source::{ Source, CallbackError, CallbackResult, with_weak };
-use signal::{ self, Signal, SignalMut, sample_raw };
+use signal::{ self, Signal, sample_raw };
 use transaction::commit;
 
 
@@ -364,36 +364,6 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
               F: Fn(B, A) -> B + Send + Sync + 'static,
     {
         Signal::cyclic(|scan| scan.snapshot(self, f).hold(initial))
-    }
-
-    /// Scan a stream and accumulate its event firings in some mutable state.
-    ///
-    /// Semantically this is equivalent to `scan`. However, it allows one to use
-    /// a non-Clone type as an accumulator and update it with efficient in-place
-    /// operations.
-    ///
-    /// The resulting `SignalMut` does have a slightly different API from a
-    /// regular `Signal` as it does not allow clones.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use carboxyl::{ Sink, Signal };
-    /// let sink: Sink<i32> = Sink::new();
-    /// let sum = sink.stream()
-    ///     .scan_mut(0, |sum, a| *sum += a)
-    ///     .combine(&Signal::new(()), |sum, ()| *sum);
-    /// assert_eq!(sum.sample(), 0);
-    /// sink.send(2);
-    /// assert_eq!(sum.sample(), 2);
-    /// sink.send(4);
-    /// assert_eq!(sum.sample(), 6);
-    /// ```
-    pub fn scan_mut<B, F>(&self, initial: B, f: F) -> SignalMut<B>
-        where B: Send + Sync + 'static,
-              F: Fn(&mut B, A) + Send + Sync + 'static,
-    {
-        signal::scan_mut(self, initial, f)
     }
 }
 
