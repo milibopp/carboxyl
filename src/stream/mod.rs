@@ -352,18 +352,18 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
     /// ```
     /// # use carboxyl::Sink;
     /// let sink = Sink::new();
-    /// let sum = sink.stream().scan(0, |a, b| a + b);
+    /// let sum = sink.stream().fold(0, |a, b| a + b);
     /// assert_eq!(sum.sample(), 0);
     /// sink.send(2);
     /// assert_eq!(sum.sample(), 2);
     /// sink.send(4);
     /// assert_eq!(sum.sample(), 6);
     /// ```
-    pub fn scan<B, F>(&self, initial: B, f: F) -> Signal<B>
+    pub fn fold<B, F>(&self, initial: B, f: F) -> Signal<B>
         where B: Send + Sync + Clone + 'static,
               F: Fn(B, A) -> B + Send + Sync + 'static,
     {
-        Signal::cyclic(|scan| scan.snapshot(self, f).hold(initial))
+        Signal::cyclic(|fold| fold.snapshot(self, f).hold(initial))
     }
 }
 
@@ -598,14 +598,14 @@ mod test {
     }
 
     #[test]
-    fn scan_race_condition() {
+    fn fold_race_condition() {
         let sink = Sink::new();
         // Feed the sink in the background
         sink.feed_async(0..100000);
         // Try it multiple times to increase failure probability, when a data
         // race can potentially happen.
         for _ in 0..10 {
-            let _sum = sink.stream().scan(0, |a, b| a + b);
+            let _sum = sink.stream().fold(0, |a, b| a + b);
         }
     }
 
