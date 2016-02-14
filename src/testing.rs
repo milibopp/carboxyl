@@ -48,7 +48,7 @@ pub fn stream_eq<T>(a: &Stream<T>, b: &Stream<T>) -> Signal<Result<(), String>>
             (Ok(()), Err(OnlyOne(a))) => Err(OnlyOne(a)),
             _ => unreachable!(),
         })
-        .scan(Ok(()), |state, a| state.and(a));
+        .fold(Ok(()), |state, a| state.and(a));
     lift1(|r| r.map_err(|e| format!("{:?}", e)), &result)
 }
 
