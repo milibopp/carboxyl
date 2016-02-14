@@ -143,12 +143,11 @@ extern crate quickcheck;
 extern crate lazy_static;
 
 pub use stream::{ Sink, Stream };
-pub use signal::{ Signal, SignalMut };
+pub use signal::{ Signal };
 
 mod transaction;
 mod source;
 mod pending;
-mod readonly;
 mod stream;
 mod signal;
 mod fnbox;
