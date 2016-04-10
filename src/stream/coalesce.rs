@@ -24,8 +24,7 @@ fn send_from_mutex<T>(mutex: &Mutex<Option<T>>, weak: Weak<RwLock<Source<T>>>) -
     mutex.lock()
         .map_err(|_| CallbackError::Poisoned)
         .and_then(|mut inner| inner.take()
-            .map(|value| with_weak(&weak, |src| src.send(value)))
-            .unwrap_or(Ok(()))
+            .map_or(Ok(()), |value| with_weak(&weak, |src| src.send(value)))
         )
 }
 

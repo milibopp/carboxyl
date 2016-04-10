@@ -431,7 +431,7 @@ impl<A> Deref for SignalCycle<A> {
 }
 
 
-/// Same as Stream::hold.
+/// Same as `Stream::hold`.
 pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
     where A: Send + Sync + 'static,
 {
