@@ -301,7 +301,7 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
     pub fn merge(&self, other: &Stream<A>) -> Stream<A> {
         commit(|| {
             let src = Arc::new(RwLock::new(Source::new()));
-            for parent in [self, other].iter() {
+            for parent in &[self, other] {
                 let weak = Arc::downgrade(&src);
                 parent.source.write().unwrap()
                     .register(move |a| with_weak(&weak, |src| src.send(a)));

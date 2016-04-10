@@ -1,6 +1,6 @@
-//! FnBox replacement
+//! `FnBox` replacement
 
-/// Specialized replacement for unstable FnBox from stdlib
+/// Specialized replacement for unstable `FnBox` from stdlib
 pub trait FnBox {
     /// Call a boxed closure
     fn call_box(self: Box<Self>);
