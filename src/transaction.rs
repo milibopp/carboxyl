@@ -28,6 +28,7 @@ type Callback = Box<FnBox + 'static>;
 
 
 /// A transaction.
+#[derive(Default)]
 pub struct Transaction {
     intermediate: Vec<Callback>,
     finalizers: Vec<Callback>,
@@ -87,7 +88,7 @@ pub fn commit<A, F: FnOnce() -> A>(body: F) -> A {
     });
     // Acquire global lock if necessary
     let _lock = match prev {
-        None => Some(TRANSACTION_MUTEX.lock().ok()
+        None => Some(TRANSACTION_MUTEX.lock()
                 .expect("global transaction mutex poisoned")
         ),
         Some(_) => None,
@@ -115,8 +116,8 @@ pub fn commit<A, F: FnOnce() -> A>(body: F) -> A {
 /// Register a callback during a transaction.
 pub fn with_current<A, F: FnOnce(&mut Transaction) -> A>(action: F) -> A {
     CURRENT_TRANSACTION.with(|current|
-        match &mut *current.borrow_mut() {
-            &mut Some(ref mut trans) => action(trans),
+        match *current.borrow_mut() {
+            Some(ref mut trans) => action(trans),
             _ => panic!("there is no active transaction to register a callback"),
         }
     )
