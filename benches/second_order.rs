@@ -26,7 +26,7 @@ fn second_order(n_sinks: usize, n_steps: usize, b: &mut Bencher) {
         .map(|_| Sink::<()>::new())
         .collect::<Vec<_>>();
     let counters = sinks.iter()
-        .map(|sink| sink.stream().scan(0, |n, _| n + 1))
+        .map(|sink| sink.stream().fold(0, |n, _| n + 1))
         .collect::<Vec<_>>();
     let walker = {
         let counters = counters.clone();
