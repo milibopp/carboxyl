@@ -8,8 +8,6 @@ applications. Read more [in the docs…][docs]
 
 [docs]: https://aepsil0n.github.io/carboxyl/
 
-*Note that currently Rust nightly is required to use this crate!*
-
 
 ## Usage example
 
