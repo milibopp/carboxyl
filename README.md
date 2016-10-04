@@ -20,16 +20,18 @@ hold the last event from a stream in a signal.
 ```rust
 extern crate carboxyl;
 
-let sink = carboxyl::Sink::new();
-let stream = sink.stream();
-let signal = stream.hold(3);
+fn main() {
+    let sink = carboxyl::Sink::new();
+    let stream = sink.stream();
+    let signal = stream.hold(3);
 
-// The current value of the signal is initially 3
-assert_eq!(signal.sample(), 3);
+    // The current value of the signal is initially 3
+    assert_eq!(signal.sample(), 3);
 
-// When we fire an event, the signal get updated accordingly
-sink.send(5);
-assert_eq!(signal.sample(), 5);
+    // When we fire an event, the signal get updated accordingly
+    sink.send(5);
+    assert_eq!(signal.sample(), 5);
+}
 ```
 
 One can also directly iterate over the stream instead of holding it in a
@@ -37,12 +39,15 @@ signal:
 
 ```rust
 extern crate carboxyl;
-let sink = carboxyl::Sink::new();
-let stream = sink.stream();
 
-let mut events = stream.events();
-sink.send(4);
-assert_eq!(events.next(), Some(4));
+fn main() {
+    let sink = carboxyl::Sink::new();
+    let stream = sink.stream();
+
+    let mut events = stream.events();
+    sink.send(4);
+    assert_eq!(events.next(), Some(4));
+}
 ```
 
 Streams and signals can be combined using various primitives. We can map a
@@ -50,12 +55,15 @@ stream to another stream using a function:
 
 ```rust
 extern crate carboxyl;
-let sink = carboxyl::Sink::new();
-let stream = sink.stream();
 
-let squares = stream.map(|x| x * x).hold(0);
-sink.send(4);
-assert_eq!(squares.sample(), 16);
+fn main() {
+    let sink = carboxyl::Sink::new();
+    let stream = sink.stream();
+
+    let squares = stream.map(|x| x * x).hold(0);
+    sink.send(4);
+    assert_eq!(squares.sample(), 16);
+}
 ```
 
 Or we can filter a stream to create a new one that only contains events that
@@ -63,18 +71,21 @@ satisfy a certain predicate:
 
 ```rust
 extern crate carboxyl;
-let sink = carboxyl::Sink::new();
-let stream = sink.stream();
 
-let negatives = stream.filter(|&x| x < 0).hold(0);
+fn main() {
+    let sink = carboxyl::Sink::new();
+    let stream = sink.stream();
 
-// This won't arrive at the signal.
-sink.send(4);
-assert_eq!(negatives.sample(), 0);
+    let negatives = stream.filter(|&x| x < 0).hold(0);
 
-// But this will!
-sink.send(-3);
-assert_eq!(negatives.sample(), -3);
+    // This won't arrive at the signal.
+    sink.send(4);
+    assert_eq!(negatives.sample(), 0);
+
+    // But this will!
+    sink.send(-3);
+    assert_eq!(negatives.sample(), -3);
+}
 ```
 
 There are a couple of other primitives to compose streams and signals:
