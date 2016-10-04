@@ -6,7 +6,7 @@
 functional and composable approach to handle events in interactive
 applications. Read more [in the docs…][docs]
 
-[docs]: https://aepsil0n.github.io/carboxyl/
+[docs]: https://docs.rs/carboxyl/
 
 
 ## Usage example
