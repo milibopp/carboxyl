@@ -58,16 +58,20 @@ impl<A: Send + Sync + Clone + 'static> Source<A> {
         use std::mem;
         let mut new_callbacks = vec!();
         mem::swap(&mut new_callbacks, &mut self.callbacks);
-        self.callbacks = new_callbacks
-            .into_iter()
-            .filter_map(|mut callback| {
-                let result = callback(a.clone());
-                match result {
-                    Ok(_) => Some(callback),
-                    Err(_) => None,
-                }
-            })
-            .collect();
+        let n = new_callbacks.len();
+        let mut iter = new_callbacks.into_iter();
+        for _ in 1..n {
+            let mut callback = iter.next().unwrap();
+            if let Ok(_) = callback(a.clone()) {
+                self.callbacks.push(callback);
+            }
+        }
+        // process the last element without cloning
+        if let Some(mut callback) = iter.next() {
+            if let Ok(_) = callback(a) {
+                self.callbacks.push(callback);
+            }
+        }
     }
 }
 
