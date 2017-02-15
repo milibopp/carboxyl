@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="rustdoc">
+    <meta name="description" content="API documentation for the Rust `Stream` struct in crate `carboxyl`.">
+    <meta name="keywords" content="rust, rustlang, rust-lang, Stream">
+
+    <title>carboxyl::Stream - Rust</title>
+
+    <link rel="stylesheet" type="text/css" href="../normalize.css">
+    <link rel="stylesheet" type="text/css" href="../rustdoc.css">
+    <link rel="stylesheet" type="text/css" href="../main.css">
+    
+
+    
+    
+</head>
+<body class="rustdoc">
+    <!--[if lte IE 8]>
+    <div class="warning">
+        This old browser is unsupported and will most likely display funky
+        things.
+    </div>
+    <![endif]-->
+
+    
+
+    <nav class="sidebar">
+        
+        <p class='location'><a href='index.html'>carboxyl</a></p><script>window.sidebarCurrent = {name: 'Stream', ty: 'struct', relpath: ''};</script><script defer src="sidebar-items.js"></script>
+    </nav>
+
+    <nav class="sub">
+        <form class="search-form js-only">
+            <div class="search-container">
+                <input class="search-input" name="search"
+                       autocomplete="off"
+                       placeholder="Click or press ‘S’ to search, ‘?’ for more options…"
+                       type="search">
+            </div>
+        </form>
+    </nav>
+
+    <section id='main' class="content struct">
+<h1 class='fqn'><span class='in-band'>Struct <a href='index.html'>carboxyl</a>::<wbr><a class='struct' href=''>Stream</a></span><span class='out-of-band'><span id='render-detail'>
+                   <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
+                       [<span class='inner'>&#x2212;</span>]
+                   </a>
+               </span><a class='srclink' href='../src/carboxyl/stream/mod.rs.html#189-193' title='goto source code'>[src]</a></span></h1>
+<pre class='rust struct'>pub struct Stream&lt;A&gt; { /* fields omitted */ }</pre><div class='docblock'><p>A stream of events.</p>
+
+<p>Conceptually a stream can be thought of as a series of discrete events that
+occur at specific times. They are ordered by a transaction system. This
+means that firings of disjoint events can not interfere with each other. The
+consequences of one event are atomically reflected in dependent quantities.</p>
+
+<p>Streams provide a number of primitive operations. These can be used to
+compose streams and combine them with signals. For instance, streams can be
+mapped over with a function, merged with another stream of the same type or
+filtered by some predicate.</p>
+
+<h1 id='algebraic-laws' class='section-header'><a href='#algebraic-laws'>Algebraic laws</a></h1>
+<p>Furthermore, streams satisfy certain algebraic properties that are useful to
+reason about them.</p>
+
+<h2 id='monoid' class='section-header'><a href='#monoid'>Monoid</a></h2>
+<p>For once, streams of the same type form a <strong>monoid</strong> under merging. The
+neutral element in this context is <code>Stream::never()</code>. So the following laws
+always hold for streams <code>a</code>, <code>b</code> and <code>c</code> of the same type:</p>
+
+<ul>
+<li>Left identity: <code>Stream::never().merge(&amp;a) == a</code>,</li>
+<li>Right identity: <code>a.merge(&amp;Stream::never()) == a</code>,</li>
+<li>Associativity: <code>a.merge(&amp;b).merge(&amp;c) == a.merge(&amp;b.merge(&amp;c))</code>.</li>
+</ul>
+
+<p><em>Note that equality in this context is not actually implemented as such,
+since comparing two (potentially infinite) streams is a prohibitive
+operation. Instead, the expressions above can be used interchangably and
+behave identically.</em></p>
+
+<h2 id='functor' class='section-header'><a href='#functor'>Functor</a></h2>
+<p>Under the mapping operation streams also become a functor. A functor is a
+generic type like <code>Stream</code> with some mapping operation that takes a function
+<code>Fn(A) -&gt; B</code> to map a <code>Stream&lt;A&gt;</code> to a <code>Stream&lt;B&gt;</code>. Algebraically it
+satisfies the following laws:</p>
+
+<ul>
+<li>The identity function is preserved: <code>a.map(|x| x) == a</code>,</li>
+<li>Function composition is respected: <code>a.map(f).map(g) == a.map(|x| g(f(x)))</code>.</li>
+</ul>
+</div><h2 id='methods'>Methods</h2><h3 class='impl'><span class='in-band'><code>impl&lt;A:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='trait core::clone::Clone'>Clone</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + 'static&gt; <a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;A&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a class='srclink' href='../src/carboxyl/stream/mod.rs.html#205-368' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='method.never' class='method'><span id='never.v' class='invisible'><code>fn <a href='#method.never' class='fnname'>never</a>() -&gt; <a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;A&gt;</code></span></h4>
+<div class='docblock'><p>Create a stream that never fires. This can be useful in certain
+situations, where a stream is logically required, but no events are
+expected.</p>
+</div><h4 id='method.map' class='method'><span id='map.v' class='invisible'><code>fn <a href='#method.map' class='fnname'>map</a>&lt;B, F&gt;(&amp;self, f: F) -&gt; <a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;B&gt; <span class='where fmt-newline'>where B: <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='trait core::clone::Clone'>Clone</a> + 'static, F: <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Fn.html' title='trait core::ops::Fn'>Fn</a>(A) -&gt; B + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + 'static</span></code></span></h4>
+<div class='docblock'><p>Map the stream to another stream using a function.</p>
+
+<p><code>map</code> applies a function to every event fired in this stream to create a
+new stream of type <code>B</code>.</p>
+
+<pre class='rust rust-example-rendered'>
+<span class='kw'>let</span> <span class='ident'>sink</span>: <span class='ident'>Sink</span><span class='op'>&lt;</span><span class='ident'>i32</span><span class='op'>&gt;</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='ident'>new</span>();
+<span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>events</span> <span class='op'>=</span> <span class='ident'>sink</span>.<span class='ident'>stream</span>().<span class='ident'>map</span>(<span class='op'>|</span><span class='ident'>x</span><span class='op'>|</span> <span class='ident'>x</span> <span class='op'>+</span> <span class='number'>4</span>).<span class='ident'>events</span>();
+<span class='ident'>sink</span>.<span class='ident'>send</span>(<span class='number'>3</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>events</span>.<span class='ident'>next</span>(), <span class='prelude-val'>Some</span>(<span class='number'>7</span>));</pre>
+</div><h4 id='method.filter' class='method'><span id='filter.v' class='invisible'><code>fn <a href='#method.filter' class='fnname'>filter</a>&lt;F&gt;(&amp;self, f: F) -&gt; <a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;A&gt; <span class='where fmt-newline'>where F: <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Fn.html' title='trait core::ops::Fn'>Fn</a>(&amp;A) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.bool.html'>bool</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + 'static</span></code></span></h4>
+<div class='docblock'><p>Filter a stream according to a predicate.</p>
+
+<p><code>filter</code> creates a new stream that only fires those events from the
+original stream that satisfy the predicate.</p>
+
+<pre class='rust rust-example-rendered'>
+<span class='kw'>let</span> <span class='ident'>sink</span>: <span class='ident'>Sink</span><span class='op'>&lt;</span><span class='ident'>i32</span><span class='op'>&gt;</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='ident'>new</span>();
+<span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>events</span> <span class='op'>=</span> <span class='ident'>sink</span>.<span class='ident'>stream</span>()
+    .<span class='ident'>filter</span>(<span class='op'>|</span><span class='kw-2'>&amp;</span><span class='ident'>x</span><span class='op'>|</span> (<span class='ident'>x</span> <span class='op'>&gt;=</span> <span class='number'>4</span>) <span class='op'>&amp;&amp;</span> (<span class='ident'>x</span> <span class='op'>&lt;=</span> <span class='number'>10</span>))
+    .<span class='ident'>events</span>();
+<span class='ident'>sink</span>.<span class='ident'>send</span>(<span class='number'>2</span>); <span class='comment'>// won&#39;t arrive</span>
+<span class='ident'>sink</span>.<span class='ident'>send</span>(<span class='number'>5</span>); <span class='comment'>// will arrive</span>
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>events</span>.<span class='ident'>next</span>(), <span class='prelude-val'>Some</span>(<span class='number'>5</span>));</pre>
+</div><h4 id='method.filter_map' class='method'><span id='filter_map.v' class='invisible'><code>fn <a href='#method.filter_map' class='fnname'>filter_map</a>&lt;B, F&gt;(&amp;self, f: F) -&gt; <a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;B&gt; <span class='where fmt-newline'>where B: <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='trait core::clone::Clone'>Clone</a> + 'static,<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;F: <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Fn.html' title='trait core::ops::Fn'>Fn</a>(A) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/option/enum.Option.html' title='enum core::option::Option'>Option</a>&lt;B&gt; + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + 'static</span></code></span></h4>
+<div class='docblock'><p>Both filter and map a stream.</p>
+
+<p>This is equivalent to <code>.map(f).filter_some()</code>.</p>
+
+<pre class='rust rust-example-rendered'>
+<span class='kw'>let</span> <span class='ident'>sink</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='ident'>new</span>();
+<span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>events</span> <span class='op'>=</span> <span class='ident'>sink</span>.<span class='ident'>stream</span>()
+    .<span class='ident'>filter_map</span>(<span class='op'>|</span><span class='ident'>i</span><span class='op'>|</span> <span class='kw'>if</span> <span class='ident'>i</span> <span class='op'>&gt;</span> <span class='number'>3</span> { <span class='prelude-val'>Some</span>(<span class='ident'>i</span> <span class='op'>+</span> <span class='number'>2</span>) } <span class='kw'>else</span> { <span class='prelude-val'>None</span> })
+    .<span class='ident'>events</span>();
+<span class='ident'>sink</span>.<span class='ident'>send</span>(<span class='number'>2</span>);
+<span class='ident'>sink</span>.<span class='ident'>send</span>(<span class='number'>4</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>events</span>.<span class='ident'>next</span>(), <span class='prelude-val'>Some</span>(<span class='number'>6</span>));</pre>
+</div><h4 id='method.merge' class='method'><span id='merge.v' class='invisible'><code>fn <a href='#method.merge' class='fnname'>merge</a>(&amp;self, other: &amp;<a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;A&gt;) -&gt; <a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;A&gt;</code></span></h4>
+<div class='docblock'><p>Merge with another stream.</p>
+
+<p><code>merge</code> takes two streams and creates a new stream that fires events
+from both input streams.</p>
+
+<pre class='rust rust-example-rendered'>
+<span class='kw'>let</span> <span class='ident'>sink_1</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='op'>&lt;</span><span class='ident'>i32</span><span class='op'>&gt;</span>::<span class='ident'>new</span>();
+<span class='kw'>let</span> <span class='ident'>sink_2</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='op'>&lt;</span><span class='ident'>i32</span><span class='op'>&gt;</span>::<span class='ident'>new</span>();
+<span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>events</span> <span class='op'>=</span> <span class='ident'>sink_1</span>.<span class='ident'>stream</span>().<span class='ident'>merge</span>(<span class='kw-2'>&amp;</span><span class='ident'>sink_2</span>.<span class='ident'>stream</span>()).<span class='ident'>events</span>();
+<span class='ident'>sink_1</span>.<span class='ident'>send</span>(<span class='number'>2</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>events</span>.<span class='ident'>next</span>(), <span class='prelude-val'>Some</span>(<span class='number'>2</span>));
+<span class='ident'>sink_2</span>.<span class='ident'>send</span>(<span class='number'>4</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>events</span>.<span class='ident'>next</span>(), <span class='prelude-val'>Some</span>(<span class='number'>4</span>));</pre>
+</div><h4 id='method.coalesce' class='method'><span id='coalesce.v' class='invisible'><code>fn <a href='#method.coalesce' class='fnname'>coalesce</a>&lt;F&gt;(&amp;self, reducer: F) -&gt; <a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;A&gt; <span class='where fmt-newline'>where F: <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Fn.html' title='trait core::ops::Fn'>Fn</a>(A, A) -&gt; A + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + 'static</span></code></span></h4>
+<div class='docblock'><p>Coalesce multiple event firings within the same transaction into a
+single event.</p>
+
+<p>The function should ideally commute, as the order of events within a
+transaction is not well-defined.</p>
+</div><h4 id='method.hold' class='method'><span id='hold.v' class='invisible'><code>fn <a href='#method.hold' class='fnname'>hold</a>(&amp;self, initial: A) -&gt; <a class='struct' href='../carboxyl/struct.Signal.html' title='struct carboxyl::Signal'>Signal</a>&lt;A&gt;</code></span></h4>
+<div class='docblock'><p>Hold an event in a signal.</p>
+
+<p>The resulting signal <code>hold</code>s the value of the last event fired by the
+stream.</p>
+
+<pre class='rust rust-example-rendered'>
+<span class='kw'>let</span> <span class='ident'>sink</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='ident'>new</span>();
+<span class='kw'>let</span> <span class='ident'>signal</span> <span class='op'>=</span> <span class='ident'>sink</span>.<span class='ident'>stream</span>().<span class='ident'>hold</span>(<span class='number'>0</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>signal</span>.<span class='ident'>sample</span>(), <span class='number'>0</span>);
+<span class='ident'>sink</span>.<span class='ident'>send</span>(<span class='number'>2</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>signal</span>.<span class='ident'>sample</span>(), <span class='number'>2</span>);</pre>
+</div><h4 id='method.events' class='method'><span id='events.v' class='invisible'><code>fn <a href='#method.events' class='fnname'>events</a>(&amp;self) -&gt; Events&lt;A&gt;</code></span></h4>
+<div class='docblock'><p>A blocking iterator over the stream.</p>
+</div><h4 id='method.fold' class='method'><span id='fold.v' class='invisible'><code>fn <a href='#method.fold' class='fnname'>fold</a>&lt;B, F&gt;(&amp;self, initial: B, f: F) -&gt; <a class='struct' href='../carboxyl/struct.Signal.html' title='struct carboxyl::Signal'>Signal</a>&lt;B&gt; <span class='where fmt-newline'>where B: <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='trait core::clone::Clone'>Clone</a> + 'static,<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;F: <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Fn.html' title='trait core::ops::Fn'>Fn</a>(B, A) -&gt; B + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + 'static</span></code></span></h4>
+<div class='docblock'><p>Scan a stream and accumulate its event firings in a signal.</p>
+
+<p>Starting at some initial value, each new event changes the value of the
+resulting signal as prescribed by the supplied function.</p>
+
+<pre class='rust rust-example-rendered'>
+<span class='kw'>let</span> <span class='ident'>sink</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='ident'>new</span>();
+<span class='kw'>let</span> <span class='ident'>sum</span> <span class='op'>=</span> <span class='ident'>sink</span>.<span class='ident'>stream</span>().<span class='ident'>fold</span>(<span class='number'>0</span>, <span class='op'>|</span><span class='ident'>a</span>, <span class='ident'>b</span><span class='op'>|</span> <span class='ident'>a</span> <span class='op'>+</span> <span class='ident'>b</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>sum</span>.<span class='ident'>sample</span>(), <span class='number'>0</span>);
+<span class='ident'>sink</span>.<span class='ident'>send</span>(<span class='number'>2</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>sum</span>.<span class='ident'>sample</span>(), <span class='number'>2</span>);
+<span class='ident'>sink</span>.<span class='ident'>send</span>(<span class='number'>4</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>sum</span>.<span class='ident'>sample</span>(), <span class='number'>6</span>);</pre>
+</div></div><h3 class='impl'><span class='in-band'><code>impl&lt;A:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='trait core::clone::Clone'>Clone</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + 'static&gt; <a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;<a class='enum' href='https://doc.rust-lang.org/nightly/core/option/enum.Option.html' title='enum core::option::Option'>Option</a>&lt;A&gt;&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a class='srclink' href='../src/carboxyl/stream/mod.rs.html#370-399' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='method.filter_some' class='method'><span id='filter_some.v' class='invisible'><code>fn <a href='#method.filter_some' class='fnname'>filter_some</a>(&amp;self) -&gt; <a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;A&gt;</code></span></h4>
+<div class='docblock'><p>Filter a stream of options.</p>
+
+<p><code>filter_some</code> creates a new stream that only fires the unwrapped
+<code>Some(…)</code> events from the original stream omitting any <code>None</code> events.</p>
+
+<pre class='rust rust-example-rendered'>
+<span class='kw'>let</span> <span class='ident'>sink</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='ident'>new</span>();
+<span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>events</span> <span class='op'>=</span> <span class='ident'>sink</span>.<span class='ident'>stream</span>().<span class='ident'>filter_some</span>().<span class='ident'>events</span>();
+<span class='ident'>sink</span>.<span class='ident'>send</span>(<span class='prelude-val'>None</span>); <span class='comment'>// won&#39;t arrive</span>
+<span class='ident'>sink</span>.<span class='ident'>send</span>(<span class='prelude-val'>Some</span>(<span class='number'>5</span>)); <span class='comment'>// will arrive</span>
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>events</span>.<span class='ident'>next</span>(), <span class='prelude-val'>Some</span>(<span class='number'>5</span>));</pre>
+</div></div><h3 class='impl'><span class='in-band'><code>impl&lt;A:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='trait core::clone::Clone'>Clone</a> + 'static&gt; <a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;<a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;A&gt;&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a class='srclink' href='../src/carboxyl/stream/mod.rs.html#401-461' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='method.switch' class='method'><span id='switch.v' class='invisible'><code>fn <a href='#method.switch' class='fnname'>switch</a>(&amp;self) -&gt; <a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;A&gt;</code></span></h4>
+<div class='docblock'><p>Switch between streams.</p>
+
+<p>This takes a stream of streams and maps it to a new stream, which fires
+all events from the most recent stream fired into it.</p>
+
+<h1 id='example' class='section-header'><a href='#example'>Example</a></h1>
+<pre class='rust rust-example-rendered'>
+<span class='comment'>// Create sinks</span>
+<span class='kw'>let</span> <span class='ident'>stream_sink</span>: <span class='ident'>Sink</span><span class='op'>&lt;</span><span class='ident'>Stream</span><span class='op'>&lt;</span><span class='ident'>i32</span><span class='op'>&gt;&gt;</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='ident'>new</span>();
+<span class='kw'>let</span> <span class='ident'>sink1</span>: <span class='ident'>Sink</span><span class='op'>&lt;</span><span class='ident'>i32</span><span class='op'>&gt;</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='ident'>new</span>();
+<span class='kw'>let</span> <span class='ident'>sink2</span>: <span class='ident'>Sink</span><span class='op'>&lt;</span><span class='ident'>i32</span><span class='op'>&gt;</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='ident'>new</span>();
+
+<span class='comment'>// Switch and listen</span>
+<span class='kw'>let</span> <span class='ident'>switched</span> <span class='op'>=</span> <span class='ident'>stream_sink</span>.<span class='ident'>stream</span>().<span class='ident'>switch</span>();
+<span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>events</span> <span class='op'>=</span> <span class='ident'>switched</span>.<span class='ident'>events</span>();
+
+<span class='comment'>// Should not receive events from either sink</span>
+<span class='ident'>sink1</span>.<span class='ident'>send</span>(<span class='number'>1</span>); <span class='ident'>sink2</span>.<span class='ident'>send</span>(<span class='number'>2</span>);
+
+<span class='comment'>// Now switch to sink 2</span>
+<span class='ident'>stream_sink</span>.<span class='ident'>send</span>(<span class='ident'>sink2</span>.<span class='ident'>stream</span>());
+<span class='ident'>sink1</span>.<span class='ident'>send</span>(<span class='number'>3</span>); <span class='ident'>sink2</span>.<span class='ident'>send</span>(<span class='number'>4</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>events</span>.<span class='ident'>next</span>(), <span class='prelude-val'>Some</span>(<span class='number'>4</span>));
+
+<span class='comment'>// And then to sink 1</span>
+<span class='ident'>stream_sink</span>.<span class='ident'>send</span>(<span class='ident'>sink1</span>.<span class='ident'>stream</span>());
+<span class='ident'>sink1</span>.<span class='ident'>send</span>(<span class='number'>5</span>); <span class='ident'>sink2</span>.<span class='ident'>send</span>(<span class='number'>6</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>events</span>.<span class='ident'>next</span>(), <span class='prelude-val'>Some</span>(<span class='number'>5</span>));</pre>
+</div></div><h2 id='implementations'>Trait Implementations</h2><h3 class='impl'><span class='in-band'><code>impl&lt;A&gt; <a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='trait core::clone::Clone'>Clone</a> for <a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;A&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a class='srclink' href='../src/carboxyl/stream/mod.rs.html#195-202' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='method.clone' class='method'><span id='clone.v' class='invisible'><code>fn <a href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone' class='fnname'>clone</a>(&amp;self) -&gt; <a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;A&gt;</code></span></h4>
+<div class='docblock'><p>Returns a copy of the value. <a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">Read more</a></p>
+</div><h4 id='method.clone_from' class='method'><span id='clone_from.v' class='invisible'><code>fn <a href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#method.clone_from' class='fnname'>clone_from</a>(&amp;mut self, source: &amp;Self)</code><div class='since' title='Stable since Rust version 1.0.0'>1.0.0</div></span></h4>
+<div class='docblock'><p>Performs copy-assignment from <code>source</code>. <a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#method.clone_from">Read more</a></p>
+</div></div></section>
+    <section id='search' class="content hidden"></section>
+
+    <section class="footer"></section>
+
+    <aside id="help" class="hidden">
+        <div>
+            <h1 class="hidden">Help</h1>
+
+            <div class="shortcuts">
+                <h2>Keyboard Shortcuts</h2>
+
+                <dl>
+                    <dt>?</dt>
+                    <dd>Show this help dialog</dd>
+                    <dt>S</dt>
+                    <dd>Focus the search field</dd>
+                    <dt>&larrb;</dt>
+                    <dd>Move up in search results</dd>
+                    <dt>&rarrb;</dt>
+                    <dd>Move down in search results</dd>
+                    <dt>&#9166;</dt>
+                    <dd>Go to active search result</dd>
+                    <dt>+</dt>
+                    <dd>Collapse/expand all sections</dd>
+                </dl>
+            </div>
+
+            <div class="infos">
+                <h2>Search Tricks</h2>
+
+                <p>
+                    Prefix searches with a type followed by a colon (e.g.
+                    <code>fn:</code>) to restrict the search to a given type.
+                </p>
+
+                <p>
+                    Accepted types are: <code>fn</code>, <code>mod</code>,
+                    <code>struct</code>, <code>enum</code>,
+                    <code>trait</code>, <code>type</code>, <code>macro</code>,
+                    and <code>const</code>.
+                </p>
+
+                <p>
+                    Search functions by type signature (e.g.
+                    <code>vec -> usize</code> or <code>* -> vec</code>)
+                </p>
+            </div>
+        </div>
+    </aside>
+
+    
+
+    <script>
+        window.rootPath = "../";
+        window.currentCrate = "carboxyl";
+    </script>
+    <script src="../jquery.js"></script>
+    <script src="../main.js"></script>
+    <script defer src="../search-index.js"></script>
+</body>
+</html>

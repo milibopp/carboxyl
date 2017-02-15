@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="rustdoc">
+    <meta name="description" content="API documentation for the Rust `Signal` struct in crate `carboxyl`.">
+    <meta name="keywords" content="rust, rustlang, rust-lang, Signal">
+
+    <title>carboxyl::Signal - Rust</title>
+
+    <link rel="stylesheet" type="text/css" href="../normalize.css">
+    <link rel="stylesheet" type="text/css" href="../rustdoc.css">
+    <link rel="stylesheet" type="text/css" href="../main.css">
+    
+
+    
+    
+</head>
+<body class="rustdoc">
+    <!--[if lte IE 8]>
+    <div class="warning">
+        This old browser is unsupported and will most likely display funky
+        things.
+    </div>
+    <![endif]-->
+
+    
+
+    <nav class="sidebar">
+        
+        <p class='location'><a href='index.html'>carboxyl</a></p><script>window.sidebarCurrent = {name: 'Signal', ty: 'struct', relpath: ''};</script><script defer src="sidebar-items.js"></script>
+    </nav>
+
+    <nav class="sub">
+        <form class="search-form js-only">
+            <div class="search-container">
+                <input class="search-input" name="search"
+                       autocomplete="off"
+                       placeholder="Click or press ‘S’ to search, ‘?’ for more options…"
+                       type="search">
+            </div>
+        </form>
+    </nav>
+
+    <section id='main' class="content struct">
+<h1 class='fqn'><span class='in-band'>Struct <a href='index.html'>carboxyl</a>::<wbr><a class='struct' href=''>Signal</a></span><span class='out-of-band'><span id='render-detail'>
+                   <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
+                       [<span class='inner'>&#x2212;</span>]
+                   </a>
+               </span><a class='srclink' href='../src/carboxyl/signal.rs.html#153-158' title='goto source code'>[src]</a></span></h1>
+<pre class='rust struct'>pub struct Signal&lt;A&gt; { /* fields omitted */ }</pre><div class='docblock'><p>A continuous signal that changes over time.</p>
+
+<p>Signals can be thought of as values that change over time. They have both a
+continuous and a discrete component. This means that their current value is
+defined by a function that can be called at any time. That function is only
+evaluated on-demand, when the signal&#39;s current value is sampled. (This is
+also called pull semantics in the literature on FRP.)</p>
+
+<p>In addition, the current function used to sample a signal may change
+discretely in reaction to some event. For instance, it is possible to create
+a signal from an event stream, by holding the last event occurence as the
+current value of the stream.</p>
+
+<h1 id='algebraic-laws' class='section-header'><a href='#algebraic-laws'>Algebraic laws</a></h1>
+<p>Signals come with some primitive methods to compose them with each other and
+with streams. Some of these primitives give the signals an algebraic
+structure.</p>
+
+<h2 id='functor' class='section-header'><a href='#functor'>Functor</a></h2>
+<p>Signals form a functor under unary lifting. Thus, the following laws hold:</p>
+
+<ul>
+<li>Preservation of identity: <code>lift!(|x| x, &amp;a) == a</code>,</li>
+<li>Function composition: <code>lift!(|x| g(f(x)), &amp;a) == lift!(g, &amp;lift!(f, &amp;a))</code>.</li>
+</ul>
+
+<h2 id='applicative-functor' class='section-header'><a href='#applicative-functor'>Applicative functor</a></h2>
+<p>By extension, using the notion of a signal of a function, signals also
+become an <a href="https://downloads.haskell.org/%7Eghc/latest/docs/html/libraries/base/Control-Applicative.html">applicative</a> using <code>Signal::new</code> as <code>pure</code> and
+<code>|sf, sa| lift!(|f, a| f(a), &amp;sf, &amp;sa)</code> as <code>&lt;*&gt;</code>.</p>
+
+<p><em>TODO: Expand on this and replace the Haskell reference.</em></p>
+</div><h2 id='methods'>Methods</h2><h3 class='impl'><span class='in-band'><code>impl&lt;A:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='trait core::clone::Clone'>Clone</a> + 'static&gt; <a class='struct' href='../carboxyl/struct.Signal.html' title='struct carboxyl::Signal'>Signal</a>&lt;A&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a class='srclink' href='../src/carboxyl/signal.rs.html#182-192' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='method.new' class='method'><span id='new.v' class='invisible'><code>fn <a href='#method.new' class='fnname'>new</a>(a: A) -&gt; <a class='struct' href='../carboxyl/struct.Signal.html' title='struct carboxyl::Signal'>Signal</a>&lt;A&gt;</code></span></h4>
+<div class='docblock'><p>Create a constant signal.</p>
+</div><h4 id='method.sample' class='method'><span id='sample.v' class='invisible'><code>fn <a href='#method.sample' class='fnname'>sample</a>(&amp;self) -&gt; A</code></span></h4>
+<div class='docblock'><p>Sample the current value of the signal.</p>
+</div></div><h3 class='impl'><span class='in-band'><code>impl&lt;A:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='trait core::clone::Clone'>Clone</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + 'static&gt; <a class='struct' href='../carboxyl/struct.Signal.html' title='struct carboxyl::Signal'>Signal</a>&lt;A&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a class='srclink' href='../src/carboxyl/signal.rs.html#194-255' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='method.cyclic' class='method'><span id='cyclic.v' class='invisible'><code>fn <a href='#method.cyclic' class='fnname'>cyclic</a>&lt;F&gt;(def: F) -&gt; <a class='struct' href='../carboxyl/struct.Signal.html' title='struct carboxyl::Signal'>Signal</a>&lt;A&gt; <span class='where fmt-newline'>where F: <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.FnOnce.html' title='trait core::ops::FnOnce'>FnOnce</a>(&amp;<a class='struct' href='../carboxyl/struct.Signal.html' title='struct carboxyl::Signal'>Signal</a>&lt;A&gt;) -&gt; <a class='struct' href='../carboxyl/struct.Signal.html' title='struct carboxyl::Signal'>Signal</a>&lt;A&gt;</span></code></span></h4>
+<div class='docblock'><p>Create a signal with a cyclic definition.</p>
+
+<p>The closure gets an undefined forward-declaration of a signal. It is
+supposed to return a self-referential definition of the same signal.</p>
+
+<p>Sampling the forward-declared signal, before it is properly defined,
+will cause a run-time panic.</p>
+
+<p>This pattern is useful to implement accumulators, counters and other
+loops that depend on the sampling behaviour of a signal before a
+transaction.</p>
+</div><h4 id='method.snapshot' class='method'><span id='snapshot.v' class='invisible'><code>fn <a href='#method.snapshot' class='fnname'>snapshot</a>&lt;B, C, F&gt;(&amp;self, stream: &amp;<a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;B&gt;, f: F) -&gt; <a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;C&gt; <span class='where fmt-newline'>where B: <a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='trait core::clone::Clone'>Clone</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + 'static,<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;C: <a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='trait core::clone::Clone'>Clone</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + 'static,<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;F: <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Fn.html' title='trait core::ops::Fn'>Fn</a>(A, B) -&gt; C + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + 'static</span></code></span></h4>
+<div class='docblock'><p>Combine the signal with a stream in a snapshot.</p>
+
+<p><code>snapshot</code> creates a new stream given a signal and a stream. Whenever
+the input stream fires an event, the output stream fires an event
+created from the signal&#39;s current value and that event using the
+supplied function.</p>
+
+<pre class='rust rust-example-rendered'>
+<span class='kw'>let</span> <span class='ident'>sink1</span>: <span class='ident'>Sink</span><span class='op'>&lt;</span><span class='ident'>i32</span><span class='op'>&gt;</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='ident'>new</span>();
+<span class='kw'>let</span> <span class='ident'>sink2</span>: <span class='ident'>Sink</span><span class='op'>&lt;</span><span class='ident'>f64</span><span class='op'>&gt;</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='ident'>new</span>();
+<span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>events</span> <span class='op'>=</span> <span class='ident'>sink1</span>.<span class='ident'>stream</span>().<span class='ident'>hold</span>(<span class='number'>1</span>)
+    .<span class='ident'>snapshot</span>(<span class='kw-2'>&amp;</span><span class='ident'>sink2</span>.<span class='ident'>stream</span>(), <span class='op'>|</span><span class='ident'>a</span>, <span class='ident'>b</span><span class='op'>|</span> (<span class='ident'>a</span>, <span class='ident'>b</span>))
+    .<span class='ident'>events</span>();
+
+<span class='comment'>// Updating its signal does not cause the snapshot to fire</span>
+<span class='ident'>sink1</span>.<span class='ident'>send</span>(<span class='number'>4</span>);
+
+<span class='comment'>// However sending an event down the stream does</span>
+<span class='ident'>sink2</span>.<span class='ident'>send</span>(<span class='number'>3.0</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>events</span>.<span class='ident'>next</span>(), <span class='prelude-val'>Some</span>((<span class='number'>4</span>, <span class='number'>3.0</span>)));</pre>
+</div><h4 id='method.map' class='method'><span id='map.v' class='invisible'><code>fn <a href='#method.map' class='fnname'>map</a>&lt;B, F&gt;(&amp;self, function: F) -&gt; <a class='struct' href='../carboxyl/struct.Signal.html' title='struct carboxyl::Signal'>Signal</a>&lt;B&gt; <span class='where fmt-newline'>where B: <a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='trait core::clone::Clone'>Clone</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + 'static, F: <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Fn.html' title='trait core::ops::Fn'>Fn</a>(A) -&gt; B + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + 'static</span></code></span></h4>
+<div class='docblock'><p>Map a signal using a function.</p>
+
+<p>Same as <code>lift!</code> with a single argument signal.</p>
+</div></div><h3 class='impl'><span class='in-band'><code>impl&lt;A:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='trait core::clone::Clone'>Clone</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + 'static&gt; <a class='struct' href='../carboxyl/struct.Signal.html' title='struct carboxyl::Signal'>Signal</a>&lt;<a class='struct' href='../carboxyl/struct.Signal.html' title='struct carboxyl::Signal'>Signal</a>&lt;A&gt;&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a class='srclink' href='../src/carboxyl/signal.rs.html#257-344' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='method.switch' class='method'><span id='switch.v' class='invisible'><code>fn <a href='#method.switch' class='fnname'>switch</a>(&amp;self) -&gt; <a class='struct' href='../carboxyl/struct.Signal.html' title='struct carboxyl::Signal'>Signal</a>&lt;A&gt;</code></span></h4>
+<div class='docblock'><p>Switch between signals.</p>
+
+<p>This transforms a <code>Signal&lt;Signal&lt;A&gt;&gt;</code> into a <code>Signal&lt;A&gt;</code>. The nested
+signal can be thought of as a representation of a switch between different
+input signals, that allows one to change the structure of the dependency
+graph at run-time. <code>switch</code> provides a way to access the inner value of
+the currently active signal.</p>
+
+<p>The following example demonstrates how to use this to switch between two
+input signals based on a <code>Button</code> event stream:</p>
+
+<pre class='rust rust-example-rendered'>
+<span class='comment'>// Button type</span>
+<span class='attribute'>#[<span class='ident'>derive</span>(<span class='ident'>Clone</span>)]</span>
+<span class='kw'>enum</span> <span class='ident'>Button</span> { <span class='ident'>A</span>, <span class='ident'>B</span> };
+
+<span class='comment'>// The input sinks</span>
+<span class='kw'>let</span> <span class='ident'>sink_a</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='op'>&lt;</span><span class='ident'>i32</span><span class='op'>&gt;</span>::<span class='ident'>new</span>();
+<span class='kw'>let</span> <span class='ident'>sink_b</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='op'>&lt;</span><span class='ident'>i32</span><span class='op'>&gt;</span>::<span class='ident'>new</span>();
+
+<span class='comment'>// The button sink</span>
+<span class='kw'>let</span> <span class='ident'>sink_button</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='op'>&lt;</span><span class='ident'>Button</span><span class='op'>&gt;</span>::<span class='ident'>new</span>();
+
+<span class='comment'>// Create the output</span>
+<span class='kw'>let</span> <span class='ident'>output</span> <span class='op'>=</span> {
+
+    <span class='comment'>// Hold input sinks in a signal with some initials</span>
+    <span class='kw'>let</span> <span class='ident'>channel_a</span> <span class='op'>=</span> <span class='ident'>sink_a</span>.<span class='ident'>stream</span>().<span class='ident'>hold</span>(<span class='number'>1</span>);
+    <span class='kw'>let</span> <span class='ident'>channel_b</span> <span class='op'>=</span> <span class='ident'>sink_b</span>.<span class='ident'>stream</span>().<span class='ident'>hold</span>(<span class='number'>2</span>);
+
+    <span class='comment'>// A trivial default channel used before any button event</span>
+    <span class='kw'>let</span> <span class='ident'>default_channel</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='ident'>new</span>().<span class='ident'>stream</span>().<span class='ident'>hold</span>(<span class='number'>0</span>);
+
+    <span class='comment'>// Map button to the channel signals, hold with the default channel as</span>
+    <span class='comment'>// initial value and switch between the signals</span>
+    <span class='ident'>sink_button</span>
+        .<span class='ident'>stream</span>()
+        .<span class='ident'>map</span>(<span class='kw'>move</span> <span class='op'>|</span><span class='ident'>b</span><span class='op'>|</span> <span class='kw'>match</span> <span class='ident'>b</span> {
+            <span class='ident'>Button</span>::<span class='ident'>A</span> <span class='op'>=&gt;</span> <span class='ident'>channel_a</span>.<span class='ident'>clone</span>(),
+            <span class='ident'>Button</span>::<span class='ident'>B</span> <span class='op'>=&gt;</span> <span class='ident'>channel_b</span>.<span class='ident'>clone</span>(),
+        })
+        .<span class='ident'>hold</span>(<span class='ident'>default_channel</span>)
+        .<span class='ident'>switch</span>()
+};
+
+<span class='comment'>// In the beginning, output will come from the default channel</span>
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>output</span>.<span class='ident'>sample</span>(), <span class='number'>0</span>);
+
+<span class='comment'>// Let&#39;s switch to channel A</span>
+<span class='ident'>sink_button</span>.<span class='ident'>send</span>(<span class='ident'>Button</span>::<span class='ident'>A</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>output</span>.<span class='ident'>sample</span>(), <span class='number'>1</span>);
+
+<span class='comment'>// And to channel B</span>
+<span class='ident'>sink_button</span>.<span class='ident'>send</span>(<span class='ident'>Button</span>::<span class='ident'>B</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>output</span>.<span class='ident'>sample</span>(), <span class='number'>2</span>);
+
+<span class='comment'>// The channels can change, too, of course</span>
+<span class='kw'>for</span> <span class='ident'>k</span> <span class='kw'>in</span> <span class='number'>4</span>..<span class='number'>13</span> {
+    <span class='ident'>sink_b</span>.<span class='ident'>send</span>(<span class='ident'>k</span>);
+    <span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>output</span>.<span class='ident'>sample</span>(), <span class='ident'>k</span>);
+}
+<span class='ident'>sink_button</span>.<span class='ident'>send</span>(<span class='ident'>Button</span>::<span class='ident'>A</span>);
+<span class='kw'>for</span> <span class='ident'>k</span> <span class='kw'>in</span> <span class='number'>21</span>..<span class='number'>77</span> {
+    <span class='ident'>sink_a</span>.<span class='ident'>send</span>(<span class='ident'>k</span>);
+    <span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>output</span>.<span class='ident'>sample</span>(), <span class='ident'>k</span>);
+}</pre>
+</div></div><h2 id='implementations'>Trait Implementations</h2><h3 class='impl'><span class='in-band'><code>impl&lt;A&gt; <a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='trait core::clone::Clone'>Clone</a> for <a class='struct' href='../carboxyl/struct.Signal.html' title='struct carboxyl::Signal'>Signal</a>&lt;A&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a class='srclink' href='../src/carboxyl/signal.rs.html#160-168' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='method.clone' class='method'><span id='clone.v' class='invisible'><code>fn <a href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone' class='fnname'>clone</a>(&amp;self) -&gt; <a class='struct' href='../carboxyl/struct.Signal.html' title='struct carboxyl::Signal'>Signal</a>&lt;A&gt;</code></span></h4>
+<div class='docblock'><p>Returns a copy of the value. <a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">Read more</a></p>
+</div><h4 id='method.clone_from' class='method'><span id='clone_from.v' class='invisible'><code>fn <a href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#method.clone_from' class='fnname'>clone_from</a>(&amp;mut self, source: &amp;Self)</code><div class='since' title='Stable since Rust version 1.0.0'>1.0.0</div></span></h4>
+<div class='docblock'><p>Performs copy-assignment from <code>source</code>. <a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#method.clone_from">Read more</a></p>
+</div></div><h3 class='impl'><span class='in-band'><code>impl&lt;A:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/fmt/trait.Debug.html' title='trait core::fmt::Debug'>Debug</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='trait core::clone::Clone'>Clone</a> + 'static&gt; <a class='trait' href='https://doc.rust-lang.org/nightly/core/fmt/trait.Debug.html' title='trait core::fmt::Debug'>Debug</a> for <a class='struct' href='../carboxyl/struct.Signal.html' title='struct carboxyl::Signal'>Signal</a>&lt;A&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a class='srclink' href='../src/carboxyl/signal.rs.html#376-385' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='method.fmt' class='method'><span id='fmt.v' class='invisible'><code>fn <a href='https://doc.rust-lang.org/nightly/core/fmt/trait.Debug.html#tymethod.fmt' class='fnname'>fmt</a>(&amp;self, fmt: &amp;mut <a class='struct' href='https://doc.rust-lang.org/nightly/core/fmt/struct.Formatter.html' title='struct core::fmt::Formatter'>Formatter</a>) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='enum core::result::Result'>Result</a>&lt;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>()</a>, <a class='struct' href='https://doc.rust-lang.org/nightly/core/fmt/struct.Error.html' title='struct core::fmt::Error'>Error</a>&gt;</code></span></h4>
+<div class='docblock'><p>Formats the value using the given formatter.</p>
+</div></div></section>
+    <section id='search' class="content hidden"></section>
+
+    <section class="footer"></section>
+
+    <aside id="help" class="hidden">
+        <div>
+            <h1 class="hidden">Help</h1>
+
+            <div class="shortcuts">
+                <h2>Keyboard Shortcuts</h2>
+
+                <dl>
+                    <dt>?</dt>
+                    <dd>Show this help dialog</dd>
+                    <dt>S</dt>
+                    <dd>Focus the search field</dd>
+                    <dt>&larrb;</dt>
+                    <dd>Move up in search results</dd>
+                    <dt>&rarrb;</dt>
+                    <dd>Move down in search results</dd>
+                    <dt>&#9166;</dt>
+                    <dd>Go to active search result</dd>
+                    <dt>+</dt>
+                    <dd>Collapse/expand all sections</dd>
+                </dl>
+            </div>
+
+            <div class="infos">
+                <h2>Search Tricks</h2>
+
+                <p>
+                    Prefix searches with a type followed by a colon (e.g.
+                    <code>fn:</code>) to restrict the search to a given type.
+                </p>
+
+                <p>
+                    Accepted types are: <code>fn</code>, <code>mod</code>,
+                    <code>struct</code>, <code>enum</code>,
+                    <code>trait</code>, <code>type</code>, <code>macro</code>,
+                    and <code>const</code>.
+                </p>
+
+                <p>
+                    Search functions by type signature (e.g.
+                    <code>vec -> usize</code> or <code>* -> vec</code>)
+                </p>
+            </div>
+        </div>
+    </aside>
+
+    
+
+    <script>
+        window.rootPath = "../";
+        window.currentCrate = "carboxyl";
+    </script>
+    <script src="../jquery.js"></script>
+    <script src="../main.js"></script>
+    <script defer src="../search-index.js"></script>
+</body>
+</html>

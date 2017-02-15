@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["lift0","Lift a 0-ary function."],["lift1","Lift a unary function."],["lift2","Lift a binary function."],["lift3","Lift a ternary function."],["lift4","Lift a quarternary function."]]});

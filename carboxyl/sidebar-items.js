@@ -1,0 +1,1 @@
+initSidebarItems({"macro":[["lift",""]],"mod":[["lift","Lifting of n-ary functions."]],"struct":[["Signal","A continuous signal that changes over time."],["Sink","An event sink."],["Stream","A stream of events."]]});

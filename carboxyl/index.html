@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="rustdoc">
+    <meta name="description" content="API documentation for the Rust `carboxyl` crate.">
+    <meta name="keywords" content="rust, rustlang, rust-lang, carboxyl">
+
+    <title>carboxyl - Rust</title>
+
+    <link rel="stylesheet" type="text/css" href="../normalize.css">
+    <link rel="stylesheet" type="text/css" href="../rustdoc.css">
+    <link rel="stylesheet" type="text/css" href="../main.css">
+    
+
+    
+    
+</head>
+<body class="rustdoc">
+    <!--[if lte IE 8]>
+    <div class="warning">
+        This old browser is unsupported and will most likely display funky
+        things.
+    </div>
+    <![endif]-->
+
+    
+
+    <nav class="sidebar">
+        
+        <p class='location'></p><script>window.sidebarCurrent = {name: 'carboxyl', ty: 'mod', relpath: '../'};</script>
+    </nav>
+
+    <nav class="sub">
+        <form class="search-form js-only">
+            <div class="search-container">
+                <input class="search-input" name="search"
+                       autocomplete="off"
+                       placeholder="Click or press ‘S’ to search, ‘?’ for more options…"
+                       type="search">
+            </div>
+        </form>
+    </nav>
+
+    <section id='main' class="content mod">
+<h1 class='fqn'><span class='in-band'>Crate <a class='mod' href=''>carboxyl</a></span><span class='out-of-band'><span id='render-detail'>
+                   <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
+                       [<span class='inner'>&#x2212;</span>]
+                   </a>
+               </span><a class='srclink' href='../src/carboxyl/lib.rs.html#1-157' title='goto source code'>[src]</a></span></h1>
+<div class='docblock'><p><em>Carboxyl</em> provides primitives for functional reactive programming in Rust.
+It draws inspiration from the <a href="https://github.com/SodiumFRP/sodium/">Sodium</a> libraries and Push-Pull FRP,
+as described by <a href="http://conal.net/papers/push-pull-frp/push-pull-frp.pdf">Elliott (2009)</a>.</p>
+
+<h1 id='overview' class='section-header'><a href='#overview'>Overview</a></h1>
+<p>Functional reactive programming (FRP) is a composable and modular
+abstraction for creating dynamic and reactive systems. In its most general
+form it models these systems as a composition of two basic primitives:
+<em>streams</em> are a series of singular events and <em>signals</em> are continuously
+changing values.</p>
+
+<p><em>Carboxyl</em> is an imperative, hybrid push- and pull-based implementation of
+FRP. Streams and the discrete components of signals are data-driven, i.e.
+whenever an event occurs the resulting changes are propagated to everything
+that depends on it.</p>
+
+<p>However, the continuous components of signals are demand-driven. Internally,
+<em>Carboxyl</em> stores the state of a signal as a function. This function has to
+be evaluated by consumers of a signal to obtain a concrete value.</p>
+
+<p>Nonetheless, <em>Carboxyl</em> has no explicit notion of time. Its signals are
+functions that can be evaluated at any time, but they do not carry any
+inherent notion of time. Synchronization and atomicity is achieved by a
+transaction system.</p>
+
+<h1 id='functional-reactive-primitives' class='section-header'><a href='#functional-reactive-primitives'>Functional reactive primitives</a></h1>
+<p>This library provides two basic types: <code>Stream</code> and <code>Signal</code>. A stream is a
+discrete sequence of events, a signal is a container for values that change
+(discretely) over time.</p>
+
+<p>The FRP primitives are mostly implemented as methods of the basic types to
+ease method chaining, except for the various lifting functions, as they do
+not really belong to any type in particular.</p>
+
+<p>In addition, the <code>Sink</code> type allows one to create a stream of events by
+sending values into it. It is the only way to create a stream from scratch,
+i.e. without using any of the other primitives.</p>
+
+<h1 id='usage-example' class='section-header'><a href='#usage-example'>Usage example</a></h1>
+<p>Here is a simple example of how you can use the primitives provided by
+<em>Carboxyl</em>. First of all, events can be sent into a <em>sink</em>. From a sink one
+can create a <em>stream</em> of events. Streams can also be filtered, mapped and
+merged. One can e.g. hold the last event from a stream as a signal.</p>
+
+<pre class='rust rust-example-rendered'>
+<span class='kw'>use</span> <span class='ident'>carboxyl</span>::<span class='ident'>Sink</span>;
+
+<span class='kw'>let</span> <span class='ident'>sink</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='ident'>new</span>();
+<span class='kw'>let</span> <span class='ident'>stream</span> <span class='op'>=</span> <span class='ident'>sink</span>.<span class='ident'>stream</span>();
+<span class='kw'>let</span> <span class='ident'>signal</span> <span class='op'>=</span> <span class='ident'>stream</span>.<span class='ident'>hold</span>(<span class='number'>3</span>);
+
+<span class='comment'>// The current value of the signal is initially 3</span>
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>signal</span>.<span class='ident'>sample</span>(), <span class='number'>3</span>);
+
+<span class='comment'>// When we fire an event, the signal get updated accordingly</span>
+<span class='ident'>sink</span>.<span class='ident'>send</span>(<span class='number'>5</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>signal</span>.<span class='ident'>sample</span>(), <span class='number'>5</span>);</pre>
+
+<p>One can also directly iterate over the stream instead of holding it in a
+signal:</p>
+
+<pre class='rust rust-example-rendered'>
+<span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>events</span> <span class='op'>=</span> <span class='ident'>stream</span>.<span class='ident'>events</span>();
+<span class='ident'>sink</span>.<span class='ident'>send</span>(<span class='number'>4</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>events</span>.<span class='ident'>next</span>(), <span class='prelude-val'>Some</span>(<span class='number'>4</span>));</pre>
+
+<p>Streams and signals can be combined using various primitives. We can map a
+stream to another stream using a function:</p>
+
+<pre class='rust rust-example-rendered'>
+<span class='kw'>let</span> <span class='ident'>squares</span> <span class='op'>=</span> <span class='ident'>stream</span>.<span class='ident'>map</span>(<span class='op'>|</span><span class='ident'>x</span><span class='op'>|</span> <span class='ident'>x</span> <span class='op'>*</span> <span class='ident'>x</span>).<span class='ident'>hold</span>(<span class='number'>0</span>);
+<span class='ident'>sink</span>.<span class='ident'>send</span>(<span class='number'>4</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>squares</span>.<span class='ident'>sample</span>(), <span class='number'>16</span>);</pre>
+
+<p>Or we can filter a stream to create a new one that only contains events that
+satisfy a certain predicate:</p>
+
+<pre class='rust rust-example-rendered'>
+<span class='kw'>let</span> <span class='ident'>negatives</span> <span class='op'>=</span> <span class='ident'>stream</span>.<span class='ident'>filter</span>(<span class='op'>|</span><span class='kw-2'>&amp;</span><span class='ident'>x</span><span class='op'>|</span> <span class='ident'>x</span> <span class='op'>&lt;</span> <span class='number'>0</span>).<span class='ident'>hold</span>(<span class='number'>0</span>);
+
+<span class='comment'>// This won&#39;t arrive at the signal.</span>
+<span class='ident'>sink</span>.<span class='ident'>send</span>(<span class='number'>4</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>negatives</span>.<span class='ident'>sample</span>(), <span class='number'>0</span>);
+
+<span class='comment'>// But this will!</span>
+<span class='ident'>sink</span>.<span class='ident'>send</span>(<span class='op'>-</span><span class='number'>3</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>negatives</span>.<span class='ident'>sample</span>(), <span class='op'>-</span><span class='number'>3</span>);</pre>
+
+<p>There are some other methods on streams and signals, that you can find in
+their respective APIs.</p>
+
+<p>Note that all these objects are <code>Send + Sync + Clone</code>. This means you can
+easily pass them around in your code, make clones, give them to another
+thread, and they will still be updated correctly.</p>
+
+<p>You may have noticed that certain primitives take a function as an argument.
+There is a limitation on what kind of functions can and should be used here.
+In general, as FRP provides an abstraction around mutable state, they should
+be pure functions (i.e. free of side effects).</p>
+
+<p>For the most part this is guaranteed by Rust&#39;s type system. A static
+function with a matching signature always works. A closure though is very
+restricted: it must not borrow its environment, as it is impossible to
+satisfy the lifetime requirements for that. So you can only move stuff into
+it from the environment. However, the moved contents of the closure may also
+not be altered, which is guaranteed by the <code>Fn(…) -&gt; …)</code> trait bound.</p>
+
+<p>However, both closures and functions could still have side effects such as
+I/O, changing mutable state via <code>Mutex</code> or <code>RefCell</code>, etc. While Rust&#39;s type
+system cannot prevent this, you should generally not pass such functions to
+the FRP primitives, as they break the benefits you get from using FRP.
+(An exception here is debugging output.)</p>
+</div><h2 id='modules' class='section-header'><a href="#modules">Modules</a></h2>
+<table>
+                       <tr class=' module-item'>
+                           <td><a class='mod' href='lift/index.html'
+                                  title='mod carboxyl::lift'>lift</a></td>
+                           <td class='docblock-short'>
+                                <p>Lifting of n-ary functions.</p>
+                           </td>
+                       </tr></table><h2 id='macros' class='section-header'><a href="#macros">Macros</a></h2>
+<table>
+                       <tr class=' module-item'>
+                           <td><a class='macro' href='macro.lift.html'
+                                  title='macro carboxyl::lift'>lift</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr></table><h2 id='structs' class='section-header'><a href="#structs">Structs</a></h2>
+<table>
+                       <tr class=' module-item'>
+                           <td><a class='struct' href='struct.Signal.html'
+                                  title='struct carboxyl::Signal'>Signal</a></td>
+                           <td class='docblock-short'>
+                                <p>A continuous signal that changes over time.</p>
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class='struct' href='struct.Sink.html'
+                                  title='struct carboxyl::Sink'>Sink</a></td>
+                           <td class='docblock-short'>
+                                <p>An event sink.</p>
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class='struct' href='struct.Stream.html'
+                                  title='struct carboxyl::Stream'>Stream</a></td>
+                           <td class='docblock-short'>
+                                <p>A stream of events.</p>
+                           </td>
+                       </tr></table></section>
+    <section id='search' class="content hidden"></section>
+
+    <section class="footer"></section>
+
+    <aside id="help" class="hidden">
+        <div>
+            <h1 class="hidden">Help</h1>
+
+            <div class="shortcuts">
+                <h2>Keyboard Shortcuts</h2>
+
+                <dl>
+                    <dt>?</dt>
+                    <dd>Show this help dialog</dd>
+                    <dt>S</dt>
+                    <dd>Focus the search field</dd>
+                    <dt>&larrb;</dt>
+                    <dd>Move up in search results</dd>
+                    <dt>&rarrb;</dt>
+                    <dd>Move down in search results</dd>
+                    <dt>&#9166;</dt>
+                    <dd>Go to active search result</dd>
+                    <dt>+</dt>
+                    <dd>Collapse/expand all sections</dd>
+                </dl>
+            </div>
+
+            <div class="infos">
+                <h2>Search Tricks</h2>
+
+                <p>
+                    Prefix searches with a type followed by a colon (e.g.
+                    <code>fn:</code>) to restrict the search to a given type.
+                </p>
+
+                <p>
+                    Accepted types are: <code>fn</code>, <code>mod</code>,
+                    <code>struct</code>, <code>enum</code>,
+                    <code>trait</code>, <code>type</code>, <code>macro</code>,
+                    and <code>const</code>.
+                </p>
+
+                <p>
+                    Search functions by type signature (e.g.
+                    <code>vec -> usize</code> or <code>* -> vec</code>)
+                </p>
+            </div>
+        </div>
+    </aside>
+
+    
+
+    <script>
+        window.rootPath = "../";
+        window.currentCrate = "carboxyl";
+    </script>
+    <script src="../jquery.js"></script>
+    <script src="../main.js"></script>
+    <script defer src="../search-index.js"></script>
+</body>
+</html>

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="rustdoc">
+    <meta name="description" content="API documentation for the Rust `Sink` struct in crate `carboxyl`.">
+    <meta name="keywords" content="rust, rustlang, rust-lang, Sink">
+
+    <title>carboxyl::Sink - Rust</title>
+
+    <link rel="stylesheet" type="text/css" href="../normalize.css">
+    <link rel="stylesheet" type="text/css" href="../rustdoc.css">
+    <link rel="stylesheet" type="text/css" href="../main.css">
+    
+
+    
+    
+</head>
+<body class="rustdoc">
+    <!--[if lte IE 8]>
+    <div class="warning">
+        This old browser is unsupported and will most likely display funky
+        things.
+    </div>
+    <![endif]-->
+
+    
+
+    <nav class="sidebar">
+        
+        <p class='location'><a href='index.html'>carboxyl</a></p><script>window.sidebarCurrent = {name: 'Sink', ty: 'struct', relpath: ''};</script><script defer src="sidebar-items.js"></script>
+    </nav>
+
+    <nav class="sub">
+        <form class="search-form js-only">
+            <div class="search-container">
+                <input class="search-input" name="search"
+                       autocomplete="off"
+                       placeholder="Click or press ‘S’ to search, ‘?’ for more options…"
+                       type="search">
+            </div>
+        </form>
+    </nav>
+
+    <section id='main' class="content struct">
+<h1 class='fqn'><span class='in-band'>Struct <a href='index.html'>carboxyl</a>::<wbr><a class='struct' href=''>Sink</a></span><span class='out-of-band'><span id='render-detail'>
+                   <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
+                       [<span class='inner'>&#x2212;</span>]
+                   </a>
+               </span><a class='srclink' href='../src/carboxyl/stream/mod.rs.html#65-67' title='goto source code'>[src]</a></span></h1>
+<pre class='rust struct'>pub struct Sink&lt;A&gt; { /* fields omitted */ }</pre><div class='docblock'><p>An event sink.</p>
+
+<p>This primitive is a way of generating streams of events. One can send
+input values into a sink and generate a stream that fires all these inputs
+as events:</p>
+
+<pre class='rust rust-example-rendered'>
+<span class='comment'>// A new sink</span>
+<span class='kw'>let</span> <span class='ident'>sink</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='ident'>new</span>();
+
+<span class='comment'>// Make an iterator over a stream.</span>
+<span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>events</span> <span class='op'>=</span> <span class='ident'>sink</span>.<span class='ident'>stream</span>().<span class='ident'>events</span>();
+
+<span class='comment'>// Send a value into the sink</span>
+<span class='ident'>sink</span>.<span class='ident'>send</span>(<span class='number'>5</span>);
+
+<span class='comment'>// The stream</span>
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>events</span>.<span class='ident'>next</span>(), <span class='prelude-val'>Some</span>(<span class='number'>5</span>));</pre>
+
+<p>You can also feed a sink with an iterator:</p>
+
+<pre class='rust rust-example-rendered'>
+<span class='ident'>sink</span>.<span class='ident'>feed</span>(<span class='number'>20</span>..<span class='number'>40</span>);
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>events</span>.<span class='ident'>take</span>(<span class='number'>4</span>).<span class='ident'>collect</span>::<span class='op'>&lt;</span><span class='ident'>Vec</span><span class='op'>&lt;</span>_<span class='op'>&gt;&gt;</span>(), <span class='macro'>vec</span><span class='macro'>!</span>[<span class='number'>20</span>, <span class='number'>21</span>, <span class='number'>22</span>, <span class='number'>23</span>]);</pre>
+
+<h1 id='asynchronous-calls' class='section-header'><a href='#asynchronous-calls'>Asynchronous calls</a></h1>
+<p>It is possible to send events into the sink asynchronously using the methods
+<code>send_async</code> and <code>feed_async</code>. Note though, that this will void some
+guarantees on the order of events. In the following example, it is unclear,
+which event is the first in the stream:</p>
+
+<pre class='rust rust-example-rendered'>
+<span class='kw'>let</span> <span class='ident'>sink</span> <span class='op'>=</span> <span class='ident'>Sink</span>::<span class='ident'>new</span>();
+<span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>events</span> <span class='op'>=</span> <span class='ident'>sink</span>.<span class='ident'>stream</span>().<span class='ident'>events</span>();
+<span class='ident'>sink</span>.<span class='ident'>send_async</span>(<span class='number'>13</span>);
+<span class='ident'>sink</span>.<span class='ident'>send_async</span>(<span class='number'>22</span>);
+<span class='kw'>let</span> <span class='ident'>first</span> <span class='op'>=</span> <span class='ident'>events</span>.<span class='ident'>next</span>().<span class='ident'>unwrap</span>();
+<span class='macro'>assert</span><span class='macro'>!</span>(<span class='ident'>first</span> <span class='op'>==</span> <span class='number'>13</span> <span class='op'>||</span> <span class='ident'>first</span> <span class='op'>==</span> <span class='number'>22</span>);</pre>
+
+<p><code>feed_async</code> provides a workaround, as it preserves the order of events from
+the iterator. However, any event sent into the sink after a call to it, may
+come at any point between the iterator events.</p>
+</div><h2 id='methods'>Methods</h2><h3 class='impl'><span class='in-band'><code>impl&lt;A:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a>&gt; <a class='struct' href='../carboxyl/struct.Sink.html' title='struct carboxyl::Sink'>Sink</a>&lt;A&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a class='srclink' href='../src/carboxyl/stream/mod.rs.html#75-85' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='method.new' class='method'><span id='new.v' class='invisible'><code>fn <a href='#method.new' class='fnname'>new</a>() -&gt; <a class='struct' href='../carboxyl/struct.Sink.html' title='struct carboxyl::Sink'>Sink</a>&lt;A&gt;</code></span></h4>
+<div class='docblock'><p>Create a new sink.</p>
+</div><h4 id='method.stream' class='method'><span id='stream.v' class='invisible'><code>fn <a href='#method.stream' class='fnname'>stream</a>(&amp;self) -&gt; <a class='struct' href='../carboxyl/struct.Stream.html' title='struct carboxyl::Stream'>Stream</a>&lt;A&gt;</code></span></h4>
+<div class='docblock'><p>Generate a stream that fires all events sent into the sink.</p>
+</div></div><h3 class='impl'><span class='in-band'><code>impl&lt;A:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='trait core::marker::Sync'>Sync</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='trait core::clone::Clone'>Clone</a> + 'static&gt; <a class='struct' href='../carboxyl/struct.Sink.html' title='struct carboxyl::Sink'>Sink</a>&lt;A&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a class='srclink' href='../src/carboxyl/stream/mod.rs.html#87-123' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='method.send_async' class='method'><span id='send_async.v' class='invisible'><code>fn <a href='#method.send_async' class='fnname'>send_async</a>(&amp;self, a: A)</code></span></h4>
+<div class='docblock'><p>Asynchronous send.</p>
+
+<p>Same as <code>send</code>, but it spawns a new thread to process the updates to
+dependent streams and signals.</p>
+</div><h4 id='method.feed' class='method'><span id='feed.v' class='invisible'><code>fn <a href='#method.feed' class='fnname'>feed</a>&lt;I:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/iter/traits/trait.IntoIterator.html' title='trait core::iter::traits::IntoIterator'>IntoIterator</a>&lt;Item=A&gt;&gt;(&amp;self, iterator: I)</code></span></h4>
+<div class='docblock'><p>Feed values from an iterator into the sink.</p>
+
+<p>This method feeds events into the sink from an iterator.</p>
+</div><h4 id='method.feed_async' class='method'><span id='feed_async.v' class='invisible'><code>fn <a href='#method.feed_async' class='fnname'>feed_async</a>&lt;I:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/iter/traits/trait.IntoIterator.html' title='trait core::iter::traits::IntoIterator'>IntoIterator</a>&lt;Item=A&gt; + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='trait core::marker::Send'>Send</a> + 'static&gt;(&amp;self, iterator: I)</code></span></h4>
+<div class='docblock'><p>Asynchronous feed.</p>
+
+<p>This is the same as <code>feed</code>, but it does not block, since it spawns the
+feeding as a new task. This is useful, if the provided iterator is large
+or even infinite (e.g. an I/O event loop).</p>
+</div><h4 id='method.send' class='method'><span id='send.v' class='invisible'><code>fn <a href='#method.send' class='fnname'>send</a>(&amp;self, a: A)</code></span></h4>
+<div class='docblock'><p>Send a value into the sink.</p>
+
+<p>When a value is sent into the sink, an event is fired in all dependent
+streams.</p>
+</div></div><h2 id='implementations'>Trait Implementations</h2><h3 class='impl'><span class='in-band'><code>impl&lt;A&gt; <a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='trait core::clone::Clone'>Clone</a> for <a class='struct' href='../carboxyl/struct.Sink.html' title='struct carboxyl::Sink'>Sink</a>&lt;A&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a class='srclink' href='../src/carboxyl/stream/mod.rs.html#69-73' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='method.clone' class='method'><span id='clone.v' class='invisible'><code>fn <a href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone' class='fnname'>clone</a>(&amp;self) -&gt; <a class='struct' href='../carboxyl/struct.Sink.html' title='struct carboxyl::Sink'>Sink</a>&lt;A&gt;</code></span></h4>
+<div class='docblock'><p>Returns a copy of the value. <a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">Read more</a></p>
+</div><h4 id='method.clone_from' class='method'><span id='clone_from.v' class='invisible'><code>fn <a href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#method.clone_from' class='fnname'>clone_from</a>(&amp;mut self, source: &amp;Self)</code><div class='since' title='Stable since Rust version 1.0.0'>1.0.0</div></span></h4>
+<div class='docblock'><p>Performs copy-assignment from <code>source</code>. <a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#method.clone_from">Read more</a></p>
+</div></div></section>
+    <section id='search' class="content hidden"></section>
+
+    <section class="footer"></section>
+
+    <aside id="help" class="hidden">
+        <div>
+            <h1 class="hidden">Help</h1>
+
+            <div class="shortcuts">
+                <h2>Keyboard Shortcuts</h2>
+
+                <dl>
+                    <dt>?</dt>
+                    <dd>Show this help dialog</dd>
+                    <dt>S</dt>
+                    <dd>Focus the search field</dd>
+                    <dt>&larrb;</dt>
+                    <dd>Move up in search results</dd>
+                    <dt>&rarrb;</dt>
+                    <dd>Move down in search results</dd>
+                    <dt>&#9166;</dt>
+                    <dd>Go to active search result</dd>
+                    <dt>+</dt>
+                    <dd>Collapse/expand all sections</dd>
+                </dl>
+            </div>
+
+            <div class="infos">
+                <h2>Search Tricks</h2>
+
+                <p>
+                    Prefix searches with a type followed by a colon (e.g.
+                    <code>fn:</code>) to restrict the search to a given type.
+                </p>
+
+                <p>
+                    Accepted types are: <code>fn</code>, <code>mod</code>,
+                    <code>struct</code>, <code>enum</code>,
+                    <code>trait</code>, <code>type</code>, <code>macro</code>,
+                    and <code>const</code>.
+                </p>
+
+                <p>
+                    Search functions by type signature (e.g.
+                    <code>vec -> usize</code> or <code>* -> vec</code>)
+                </p>
+            </div>
+        </div>
+    </aside>
+
+    
+
+    <script>
+        window.rootPath = "../";
+        window.currentCrate = "carboxyl";
+    </script>
+    <script src="../jquery.js"></script>
+    <script src="../main.js"></script>
+    <script defer src="../search-index.js"></script>
+</body>
+</html>
