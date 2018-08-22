@@ -512,6 +512,16 @@ impl<A: Send + Sync + 'static> Iterator for Events<A> {
     fn next(&mut self) -> Option<A> { self.receiver.recv().ok() }
 }
 
+/// Creates a new stream.
+///
+/// This is not defined as a method, so that it can be public to other modules
+/// in this crate while being private outside the crate.
+pub fn build<A, T: BoxClone + 'static>(src: Arc<RwLock<Source<A>>>, keep_alive: &T) -> Stream<A> {
+    Stream {
+        source: src,
+        keep_alive: keep_alive.box_clone()
+    }
+}
 
 #[cfg(test)]
 mod test {
