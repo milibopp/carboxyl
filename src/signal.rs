@@ -8,7 +8,7 @@ use quickcheck::{ Arbitrary, Gen };
 
 use source::{ Source, with_weak, CallbackError };
 use stream::{ self, BoxClone, Stream };
-use transaction::{ commit, end };
+use transaction::{ commit, later };
 use pending::Pending;
 use lift;
 #[cfg(test)]
@@ -39,7 +39,7 @@ impl<A: Clone + 'static> FuncSignal<A> {
             cached => {
                 // Register callback to reset cache at the end of the transaction
                 let cache = self.cache.clone();
-                end(move || {
+                later(move || {
                     let mut live = cache.lock().unwrap();
                     *live = None;
                 });
@@ -83,7 +83,7 @@ pub fn reg_signal<A, B, F>(parent_source: &mut Source<A>, signal: &Signal<B>, ha
     let weak_source = Arc::downgrade(&signal.source);
     let weak_current = Arc::downgrade(&signal.current);
     parent_source.register(move |a|
-        weak_current.upgrade().map(|cur| end(
+        weak_current.upgrade().map(|cur| later(
             move || { let _ = cur.write().map(|mut cur| cur.update()); }))
             .ok_or(CallbackError::Disappeared)
         .and(with_weak(&weak_current, |cur| cur.queue(handler(a))))
