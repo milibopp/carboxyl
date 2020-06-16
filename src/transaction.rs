@@ -5,7 +5,8 @@
 
 use std::sync::Mutex;
 use std::cell::RefCell;
-use ::fnbox::FnBox;
+use crate::fnbox::FnBox;
+use lazy_static::lazy_static;
 
 
 lazy_static! {

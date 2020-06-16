@@ -1,13 +1,8 @@
 //! FRP benchmarks from https://github.com/tsurucapital/frp-benchmarks
 
-extern crate rand;
-extern crate carboxyl;
-extern crate criterion;
-
 use rand::{SeedableRng, seq::IteratorRandom, rngs::StdRng};
 use carboxyl::{Sink, Stream};
 use criterion::{criterion_group, criterion_main, Criterion, Bencher};
-
 
 /// First-order benchmark.
 ///
@@ -16,7 +11,7 @@ use criterion::{criterion_group, criterion_main, Criterion, Bencher};
 /// formatted as a string) into 10 randomly-selected nodes.
 ///
 /// Benchmark the time required for `n_steps` steps.
-fn first_order(n_sinks: usize, n_steps: usize, b: &mut Bencher) {
+fn first_order(n_sinks: usize, n_steps: usize, b: &mut Bencher<'_>) {
     // Setup network
     let sinks: Vec<Sink<String>> = (0..n_sinks).map(|_| Sink::new()).collect();
     let _printers: Vec<Stream<()>> = sinks.iter()
@@ -34,7 +29,7 @@ fn first_order(n_sinks: usize, n_steps: usize, b: &mut Bencher) {
 }
 
 /// A small reference benchmark to do the same amount of actual work without FRP
-fn first_order_1k_ref(b: &mut Bencher) {
+fn first_order_1k_ref(b: &mut Bencher<'_>) {
     let mut rng = StdRng::from_entropy();
     b.iter(|| for i in 0..1_000 {
         for _k in (0..1_000).choose_multiple(&mut rng, 10) {

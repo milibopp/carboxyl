@@ -1,12 +1,9 @@
 //! Simple benchmarks
 
-extern crate carboxyl;
-extern crate criterion;
-
 use carboxyl::Sink;
 use criterion::{criterion_group, criterion_main, Criterion, Bencher};
 
-fn bench_chain(b: &mut Bencher) {
+fn bench_chain(b: &mut Bencher<'_>) {
     let sink: Sink<i32> = Sink::new();
     let _ = sink.stream()
         .map(|x| x + 4)

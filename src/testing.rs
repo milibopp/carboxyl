@@ -4,9 +4,9 @@ use std::sync::Arc;
 use std::fmt::Debug;
 use rand::random;
 
-use lift::{ lift0, lift1 };
-use signal::Signal;
-use stream::Stream;
+use crate::lift::{ lift0, lift1 };
+use crate::signal::Signal;
+use crate::stream::Stream;
 
 
 /// The identity function.
@@ -90,8 +90,8 @@ pub fn partial_comp<A, B, C>(f: ArcFn<B, C>) -> ArcFn<ArcFn<A, B>, ArcFn<A, C>>
 
 /// Self-tests.
 mod test {
-    use signal::Signal;
-    use stream::{ Stream, Sink };
+    use crate::signal::Signal;
+    use crate::stream::{ Stream, Sink };
     use super::{ stream_eq, signal_eq };
 
     #[test]

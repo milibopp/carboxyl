@@ -3,9 +3,9 @@
 use std::sync::{ Arc, RwLock, Mutex, Weak };
 use std::sync::mpsc::{ Receiver, channel };
 use std::thread;
-use source::{ Source, CallbackError, CallbackResult, with_weak };
-use signal::{ self, Signal, sample_raw };
-use transaction::commit;
+use crate::source::{ Source, CallbackError, CallbackResult, with_weak };
+use crate::signal::{ self, Signal, sample_raw };
+use crate::transaction::commit;
 
 
 mod coalesce;
@@ -529,7 +529,7 @@ mod test {
     use std::time::Duration;
     use quickcheck::quickcheck;
 
-    use testing::{ id, stream_eq };
+    use crate::testing::{ id, stream_eq };
     use super::*;
 
     #[test]
