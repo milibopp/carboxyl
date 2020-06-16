@@ -1,13 +1,11 @@
 //! Simple benchmarks
-#![feature(test)]
 
-extern crate test;
 extern crate carboxyl;
+extern crate criterion;
 
-use test::Bencher;
 use carboxyl::Sink;
+use criterion::{criterion_group, criterion_main, Criterion, Bencher};
 
-#[bench]
 fn bench_chain(b: &mut Bencher) {
     let sink: Sink<i32> = Sink::new();
     let _ = sink.stream()
@@ -17,3 +15,10 @@ fn bench_chain(b: &mut Bencher) {
         .hold(15);
     b.iter(|| sink.send(-5));
 }
+
+fn bench_fn(c: &mut Criterion) {
+    c.bench_function("simple", bench_chain);
+}
+
+criterion_group!(benches, bench_fn);
+criterion_main!(benches);

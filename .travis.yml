@@ -19,7 +19,7 @@ script:
     travis-cargo build &&
     travis-cargo test &&
     travis-cargo doc &&
-    travis-cargo --only nightly bench
+    travis-cargo bench
 
 after_success:
   - travis-cargo doc-upload

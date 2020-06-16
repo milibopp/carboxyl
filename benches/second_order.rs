@@ -1,13 +1,12 @@
 //! FRP benchmarks from https://github.com/tsurucapital/frp-benchmarks
-#![feature(test)]
 
-extern crate test;
 extern crate rand;
 extern crate carboxyl;
+extern crate criterion;
 
-use test::Bencher;
-use rand::{XorShiftRng, sample};
+use rand::{SeedableRng, seq::IteratorRandom, rngs::StdRng};
 use carboxyl::Sink;
+use criterion::{criterion_group, criterion_main, Criterion, Bencher};
 
 
 /// Second-order benchmark.
@@ -35,27 +34,21 @@ fn second_order(n_sinks: usize, n_steps: usize, b: &mut Bencher) {
     let signal = walker.hold(counters[0].clone()).switch();
 
     // Feed events
-    let mut rng = XorShiftRng::new_unseeded();
+    let mut rng = StdRng::from_entropy();
     b.iter(|| for i in 0..n_steps {
         stepper.send(i);
-        for sink in sample(&mut rng, sinks.iter(), 10) {
+        for sink in sinks.iter().choose_multiple(&mut rng, 10) {
             sink.send(());
         }
         format!("{}", signal.sample());
     });
 }
 
-#[bench]
-fn second_order_100(b: &mut Bencher) {
-    second_order(1_000, 100, b);
+fn bench_fn(c: &mut Criterion) {
+    c.bench_function("second order 100", |b| second_order(1_000, 100, b));
+    c.bench_function("second order 1k", |b| second_order(1_000, 1_000, b));
+    c.bench_function("second order 10k", |b| second_order(1_000, 10_000, b));
 }
 
-#[bench]
-fn second_order_1k(b: &mut Bencher) {
-    second_order(1_000, 1_000, b);
-}
-
-#[bench]
-fn second_order_10k(b: &mut Bencher) {
-    second_order(1_000, 10_000, b);
-}
+criterion_group!(benches, bench_fn);
+criterion_main!(benches);
