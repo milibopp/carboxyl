@@ -53,7 +53,7 @@ pub fn stream_eq<T>(a: &Stream<T>, b: &Stream<T>) -> Signal<Result<(), String>>
 }
 
 /// A boxed function.
-pub type ArcFn<A, B> = Arc<Fn(A) -> B + Send + Sync + 'static>;
+pub type ArcFn<A, B> = Arc<dyn Fn(A) -> B + Send + Sync + 'static>;
 
 /// Wrap a function into a constant signal of that function.
 pub fn pure_fn<A, B, F>(f: F) -> Signal<ArcFn<A, B>>

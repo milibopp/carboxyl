@@ -17,7 +17,7 @@ use testing::ArcFn;
 
 /// A functional signal. Caches its return value during a transaction.
 pub struct FuncSignal<A> {
-    func: Box<Fn() -> A + Send + Sync + 'static>,
+    func: Box<dyn Fn() -> A + Send + Sync + 'static>,
     cache: Arc<Mutex<Option<A>>>,
 }
 
@@ -154,7 +154,7 @@ pub struct Signal<A> {
     current: Arc<RwLock<Pending<SignalFn<A>>>>,
     source: Arc<RwLock<Source<()>>>,
     #[allow(dead_code)]
-    keep_alive: Box<BoxClone>,
+    keep_alive: Box<dyn BoxClone>,
 }
 
 impl<A> Clone for Signal<A> {

@@ -1,34 +1,7 @@
 //! Lifting of n-ary functions.
 //!
-//! A lift maps a function on values to a function on signals. Given a function of
-//! type `F: Fn(A, B, …) -> R` and signals of types `Signal<A>, Signal<B>, …` the
-//! `lift!` macro creates a `Signal<R>`, whose content is computed using the
-//! function.
-//!
-//! Currently lift is only implemented for functions with up to four arguments.
-//! This limitation is due to the current implementation strategy (and maybe
-//! limitations of Rust's type system), but it can be increased to arbitrary but
-//! finite arity if required.
-//!
-//! # Example
-//!
-//! ```
-//! # #[macro_use] extern crate carboxyl;
-//! # fn main() {
-//! # use carboxyl::Sink;
-//! let sink_a = Sink::new();
-//! let sink_b = Sink::new();
-//! let product = lift!(
-//!     |a, b| a * b,
-//!     &sink_a.stream().hold(0),
-//!     &sink_b.stream().hold(0)
-//! );
-//! assert_eq!(product.sample(), 0);
-//! sink_a.send(3);
-//! sink_b.send(5);
-//! assert_eq!(product.sample(), 15);
-//! # }
-//! ```
+//! There are specific functions for arity up to 4, namely lift0, lift1 and so on. However, it is
+//! recommended to just use the macro lift! instead.
 
 use std::sync::Arc;
 use signal::{ Signal, SignalFn, signal_build, signal_current, signal_source, reg_signal, sample_raw };
@@ -36,6 +9,37 @@ use transaction::commit;
 
 
 #[macro_export]
+/// Lifting of n-ary functions.
+///
+/// A lift maps a function on values to a function on signals. Given a function of
+/// type `F: Fn(A, B, …) -> R` and signals of types `Signal<A>, Signal<B>, …` the
+/// `lift!` macro creates a `Signal<R>`, whose content is computed using the
+/// function.
+///
+/// Currently lift is only implemented for functions with up to four arguments.
+/// This limitation is due to the current implementation strategy (and maybe
+/// limitations of Rust's type system), but it can be increased to arbitrary but
+/// finite arity if required.
+///
+/// # Example
+///
+/// ```
+/// # #[macro_use] extern crate carboxyl;
+/// # fn main() {
+/// # use carboxyl::Sink;
+/// let sink_a = Sink::new();
+/// let sink_b = Sink::new();
+/// let product = lift!(
+///     |a, b| a * b,
+///     &sink_a.stream().hold(0),
+///     &sink_b.stream().hold(0)
+/// );
+/// assert_eq!(product.sample(), 0);
+/// sink_a.send(3);
+/// sink_b.send(5);
+/// assert_eq!(product.sample(), 15);
+/// # }
+/// ```
 macro_rules! lift {
     ($f: expr)
         => ( $crate::lift::lift0($f) );
