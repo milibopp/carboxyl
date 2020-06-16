@@ -20,6 +20,7 @@ script:
     travis-cargo build &&
     travis-cargo test &&
     travis-cargo doc &&
+    travis-cargo build --benches &&
     travis-cargo bench simple
 
 after_success:
