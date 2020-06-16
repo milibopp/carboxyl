@@ -15,7 +15,7 @@ build = "build.rs"
 lazy_static = "1.4"
 
 [dev-dependencies]
-rand = "0.3"
+rand = "0.7"
 quickcheck = "0.9"
 skeptic = "0.13"
 
