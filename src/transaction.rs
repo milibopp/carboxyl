@@ -30,7 +30,6 @@ type Callback = Box<FnBox + 'static>;
 /// A transaction.
 #[derive(Default)]
 pub struct Transaction {
-    intermediate: Vec<Callback>,
     finalizers: Vec<Callback>,
 }
 
@@ -38,37 +37,23 @@ impl Transaction {
     /// Create a new transaction
     fn new() -> Transaction {
         Transaction {
-            intermediate: vec![],
             finalizers: vec![],
         }
-    }
-
-    /// Add a callback that will be called, when the transaction is done
-    /// except for finalizers.
-    pub fn later<F: FnOnce() + 'static>(&mut self, callback: F) {
-        self.intermediate.push(Box::new(callback));
     }
 
     /// Add a finalizing callback. This should not have far reaching
     /// side-effects, and in particular not commit by itself. Typical operations
     /// for a finalizer are executing queued state updates.
-    pub fn end<F: FnOnce() + 'static>(&mut self, callback: F) {
+    pub fn later<F: FnOnce() + 'static>(&mut self, callback: F) {
         self.finalizers.push(Box::new(callback));
     }
 
     /// Advance transactions by moving out intermediate stage callbacks.
-    fn advance(&mut self) -> Vec<Callback> {
+    fn finalizers(&mut self) -> Vec<Callback> {
         use std::mem;
-        let mut intermediate = vec![];
-        mem::swap(&mut intermediate, &mut self.intermediate);
-        intermediate
-    }
-
-    /// Finalize the transaction
-    fn finalize(self) {
-        for finalizer in self.finalizers {
-            finalizer.call_box();
-        }
+        let mut finalizers = vec![];
+        mem::swap(&mut finalizers, &mut self.finalizers);
+        finalizers
     }
 }
 
@@ -95,19 +80,25 @@ pub fn commit<A, F: FnOnce() -> A>(body: F) -> A {
     };
     // Perform the main body of the transaction
     let result = body();
-    // Advance the transaction as long as necessary
-    loop {
-        let callbacks = with_current(Transaction::advance);
-        if callbacks.is_empty() { break }
-        for callback in callbacks {
-            callback.call_box();
+
+    // if there was a previous transaction, move all the finalizers
+    // there, otherwise run them here
+    match prev {
+        Some(ref mut trans) => with_current(|cur| trans.finalizers.append(&mut cur.finalizers)),
+        None => loop {
+            let callbacks = with_current(Transaction::finalizers);
+            if callbacks.is_empty() { break }
+            for callback in callbacks {
+                callback.call_box();
+            }
         }
     }
-    // Call all finalizers and drop the transaction
+
+    // Drop the transaction
     CURRENT_TRANSACTION.with(|current|
         mem::swap(&mut prev, &mut current.borrow_mut())
     );
-    prev.unwrap().finalize();
+
     // Return
     result
 }
@@ -125,10 +116,6 @@ pub fn with_current<A, F: FnOnce(&mut Transaction) -> A>(action: F) -> A {
 
 pub fn later<F: FnOnce() + 'static>(action: F) {
     with_current(|c| c.later(action))
-}
-
-pub fn end<F: FnOnce() + 'static>(action: F) {
-    with_current(|c| c.end(action))
 }
 
 
