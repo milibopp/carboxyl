@@ -1,8 +1,8 @@
 //! FRP benchmarks from https://github.com/tsurucapital/frp-benchmarks
 
-use rand::{SeedableRng, seq::IteratorRandom, rngs::StdRng};
 use carboxyl::Sink;
-use criterion::{criterion_group, criterion_main, Criterion, Bencher};
+use criterion::{criterion_group, criterion_main, Bencher, Criterion};
+use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
 
 /// Second-order benchmark.
 ///
@@ -16,10 +16,9 @@ use criterion::{criterion_group, criterion_main, Criterion, Bencher};
 fn second_order(n_sinks: usize, n_steps: usize, b: &mut Bencher<'_>) {
     // Setup network
     let stepper = Sink::<usize>::new();
-    let sinks = (0..n_sinks)
-        .map(|_| Sink::<()>::new())
-        .collect::<Vec<_>>();
-    let counters = sinks.iter()
+    let sinks = (0..n_sinks).map(|_| Sink::<()>::new()).collect::<Vec<_>>();
+    let counters = sinks
+        .iter()
         .map(|sink| sink.stream().fold(0, |n, _| n + 1))
         .collect::<Vec<_>>();
     let walker = {
@@ -30,12 +29,14 @@ fn second_order(n_sinks: usize, n_steps: usize, b: &mut Bencher<'_>) {
 
     // Feed events
     let mut rng = StdRng::from_entropy();
-    b.iter(|| for i in 0..n_steps {
-        stepper.send(i);
-        for sink in sinks.iter().choose_multiple(&mut rng, 10) {
-            sink.send(());
+    b.iter(|| {
+        for i in 0..n_steps {
+            stepper.send(i);
+            for sink in sinks.iter().choose_multiple(&mut rng, 10) {
+                sink.send(());
+            }
+            format!("{}", signal.sample());
         }
-        format!("{}", signal.sample());
     });
 }
 

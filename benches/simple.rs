@@ -1,11 +1,12 @@
 //! Simple benchmarks
 
 use carboxyl::Sink;
-use criterion::{criterion_group, criterion_main, Criterion, Bencher};
+use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 
 fn bench_chain(b: &mut Bencher<'_>) {
     let sink: Sink<i32> = Sink::new();
-    let _ = sink.stream()
+    let _ = sink
+        .stream()
         .map(|x| x + 4)
         .filter(|&x| x < 4)
         .merge(&sink.stream().map(|x| x * 5))

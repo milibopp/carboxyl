@@ -1,20 +1,22 @@
 //! Utilities for the test suite.
 
-use std::sync::Arc;
-use std::fmt::Debug;
 use rand::random;
+use std::fmt::Debug;
+use std::sync::Arc;
 
-use crate::lift::{ lift0, lift1 };
+use crate::lift::{lift0, lift1};
 use crate::signal::Signal;
 use crate::stream::Stream;
 
-
 /// The identity function.
-pub fn id<T>(t: T) -> T { t }
+pub fn id<T>(t: T) -> T {
+    t
+}
 
 /// Trace equality of two signals.
 pub fn signal_eq<T>(a: &Signal<T>, b: &Signal<T>) -> Signal<bool>
-    where T: PartialEq + Clone + Send + Sync + 'static
+where
+    T: PartialEq + Clone + Send + Sync + 'static,
 {
     lift!(|a, b| a == b, a, b)
 }
@@ -33,17 +35,23 @@ fn pair<T, U>(t: T, u: U) -> (T, U) {
 
 /// Trace equality of two streams.
 pub fn stream_eq<T>(a: &Stream<T>, b: &Stream<T>) -> Signal<Result<(), String>>
-    where T: PartialEq + Clone + Send + Sync + 'static + Debug,
+where
+    T: PartialEq + Clone + Send + Sync + 'static + Debug,
 {
     use self::EquivError::*;
     let tagger = lift0(random::<u64>);
-    let result = tagger.snapshot(a, pair)
+    let result = tagger
+        .snapshot(a, pair)
         .merge(&tagger.snapshot(b, pair))
         .map(|x| Err(OnlyOne(x)))
         .coalesce(|a, b| match (a, b) {
-            (Err(OnlyOne(a)), Err(OnlyOne(b))) =>
-                if &a == &b { Ok(()) }
-                else { Err(Mismatch(a, b)) },
+            (Err(OnlyOne(a)), Err(OnlyOne(b))) => {
+                if &a == &b {
+                    Ok(())
+                } else {
+                    Err(Mismatch(a, b))
+                }
+            }
             (Err(Mismatch(a, b)), Err(OnlyOne(_))) => Err(Mismatch(a, b)),
             (Ok(()), Err(OnlyOne(a))) => Err(OnlyOne(a)),
             _ => unreachable!(),
@@ -57,42 +65,49 @@ pub type ArcFn<A, B> = Arc<dyn Fn(A) -> B + Send + Sync + 'static>;
 
 /// Wrap a function into a constant signal of that function.
 pub fn pure_fn<A, B, F>(f: F) -> Signal<ArcFn<A, B>>
-    where A: 'static,
-          B: 'static,
-          F: Fn(A) -> B + Send + Sync + 'static,
+where
+    A: 'static,
+    B: 'static,
+    F: Fn(A) -> B + Send + Sync + 'static,
 {
     Signal::new(make_fn(f))
 }
 
 /// Box a function to erase its type.
 pub fn make_fn<A, B, F>(f: F) -> ArcFn<A, B>
-    where A: 'static,
-          B: 'static,
-          F: Fn(A) -> B + Send + Sync + 'static,
+where
+    A: 'static,
+    B: 'static,
+    F: Fn(A) -> B + Send + Sync + 'static,
 {
     Arc::new(f)
 }
 
 /// Function composition on boxed functions.
 pub fn comp<A, B, C>(f: ArcFn<B, C>, g: ArcFn<A, B>) -> ArcFn<A, C>
-    where A: 'static, B: 'static, C: 'static
+where
+    A: 'static,
+    B: 'static,
+    C: 'static,
 {
     make_fn(move |a| f(g(a)))
 }
 
 /// Partially applied function composition.
 pub fn partial_comp<A, B, C>(f: ArcFn<B, C>) -> ArcFn<ArcFn<A, B>, ArcFn<A, C>>
-    where A: 'static, B: 'static, C: 'static
+where
+    A: 'static,
+    B: 'static,
+    C: 'static,
 {
     make_fn(move |g| comp(f.clone(), g))
 }
 
-
 /// Self-tests.
 mod test {
+    use super::{signal_eq, stream_eq};
     use crate::signal::Signal;
-    use crate::stream::{ Stream, Sink };
-    use super::{ stream_eq, signal_eq };
+    use crate::stream::{Sink, Stream};
 
     #[test]
     fn signal_eq_const() {
@@ -128,19 +143,29 @@ mod test {
     fn stream_eq_same_sink() {
         let sink = Sink::new();
         let eq = stream_eq(&sink.stream(), &sink.stream());
-        for n in 0..20 { sink.send(n); }
+        for n in 0..20 {
+            sink.send(n);
+        }
         assert_eq!(eq.sample(), Ok(()));
     }
 
     #[test]
     fn stream_eq_algebraic() {
-        fn f(n: i32) -> i32 { n + 3 }
-        fn g(n: i32) -> i32 { 2 * n }
-        fn h(n: i32) -> i32 { f(g(n)) }
+        fn f(n: i32) -> i32 {
+            n + 3
+        }
+        fn g(n: i32) -> i32 {
+            2 * n
+        }
+        fn h(n: i32) -> i32 {
+            f(g(n))
+        }
 
         let sink = Sink::new();
         let eq = stream_eq(&sink.stream().map(g).map(f), &sink.stream().map(h));
-        for n in 0..20 { sink.send(n); }
+        for n in 0..20 {
+            sink.send(n);
+        }
         assert_eq!(eq.sample(), Ok(()));
     }
 }

@@ -1,15 +1,13 @@
 //! Streams of discrete events
 
-use std::sync::{ Arc, RwLock, Mutex, Weak };
-use std::sync::mpsc::{ Receiver, channel };
-use std::thread;
-use crate::source::{ Source, CallbackError, CallbackResult, with_weak };
-use crate::signal::{ self, Signal, sample_raw };
+use crate::signal::{self, sample_raw, Signal};
+use crate::source::{with_weak, CallbackError, CallbackResult, Source};
 use crate::transaction::commit;
-
+use std::sync::mpsc::{channel, Receiver};
+use std::sync::{Arc, Mutex, RwLock, Weak};
+use std::thread;
 
 mod coalesce;
-
 
 /// An event sink.
 ///
@@ -68,19 +66,26 @@ pub struct Sink<A> {
 
 impl<A> Clone for Sink<A> {
     fn clone(&self) -> Sink<A> {
-        Sink { source: self.source.clone() }
+        Sink {
+            source: self.source.clone(),
+        }
     }
 }
 
 impl<A: Send + Sync> Sink<A> {
     /// Create a new sink.
     pub fn new() -> Sink<A> {
-        Sink { source: Arc::new(RwLock::new(Source::new())) }
+        Sink {
+            source: Arc::new(RwLock::new(Source::new())),
+        }
     }
 
     /// Generate a stream that fires all events sent into the sink.
     pub fn stream(&self) -> Stream<A> {
-        Stream { source: self.source.clone(), keep_alive: Box::new(()), }
+        Stream {
+            source: self.source.clone(),
+            keep_alive: Box::new(()),
+        }
     }
 }
 
@@ -97,7 +102,7 @@ impl<A: Send + Sync + Clone + 'static> Sink<A> {
     /// Feed values from an iterator into the sink.
     ///
     /// This method feeds events into the sink from an iterator.
-    pub fn feed<I: IntoIterator<Item=A>>(&self, iterator: I) {
+    pub fn feed<I: IntoIterator<Item = A>>(&self, iterator: I) {
         for event in iterator {
             self.send(event);
         }
@@ -108,7 +113,7 @@ impl<A: Send + Sync + Clone + 'static> Sink<A> {
     /// This is the same as `feed`, but it does not block, since it spawns the
     /// feeding as a new task. This is useful, if the provided iterator is large
     /// or even infinite (e.g. an I/O event loop).
-    pub fn feed_async<I: IntoIterator<Item=A> + Send + 'static>(&self, iterator: I) {
+    pub fn feed_async<I: IntoIterator<Item = A> + Send + 'static>(&self, iterator: I) {
         let clone = self.clone();
         thread::spawn(move || clone.feed(iterator));
     }
@@ -122,7 +127,6 @@ impl<A: Send + Sync + Clone + 'static> Sink<A> {
     }
 }
 
-
 /// Trait to wrap cloning of boxed values in a object-safe manner
 pub trait BoxClone: Sync + Send {
     /// Clone the object as a boxed trait object
@@ -135,7 +139,6 @@ impl<T: Sync + Send + Clone + 'static> BoxClone for T {
     }
 }
 
-
 /// Access a stream's source.
 ///
 /// This is not defined as a method, so that it can be public to other modules
@@ -143,7 +146,6 @@ impl<T: Sync + Send + Clone + 'static> BoxClone for T {
 pub fn source<A>(stream: &Stream<A>) -> &Arc<RwLock<Source<A>>> {
     &stream.source
 }
-
 
 /// A stream of events.
 ///
@@ -201,7 +203,6 @@ impl<A> Clone for Stream<A> {
     }
 }
 
-
 impl<A: Clone + Send + Sync + 'static> Stream<A> {
     /// Create a stream that never fires. This can be useful in certain
     /// situations, where a stream is logically required, but no events are
@@ -209,7 +210,7 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
     pub fn never() -> Stream<A> {
         Stream {
             source: Arc::new(RwLock::new(Source::new())),
-            keep_alive: Box::new(())
+            keep_alive: Box::new(()),
         }
     }
 
@@ -226,13 +227,16 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
     /// assert_eq!(events.next(), Some(7));
     /// ```
     pub fn map<B, F>(&self, f: F) -> Stream<B>
-        where B: Send + Sync + Clone + 'static,
-              F: Fn(A) -> B + Send + Sync + 'static,
+    where
+        B: Send + Sync + Clone + 'static,
+        F: Fn(A) -> B + Send + Sync + 'static,
     {
         commit(|| {
             let src = Arc::new(RwLock::new(Source::new()));
             let weak = Arc::downgrade(&src);
-            self.source.write().unwrap()
+            self.source
+                .write()
+                .unwrap()
                 .register(move |a| with_weak(&weak, |src| src.send(f(a))));
             Stream {
                 source: src,
@@ -257,7 +261,8 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
     /// assert_eq!(events.next(), Some(5));
     /// ```
     pub fn filter<F>(&self, f: F) -> Stream<A>
-        where F: Fn(&A) -> bool + Send + Sync + 'static,
+    where
+        F: Fn(&A) -> bool + Send + Sync + 'static,
     {
         self.filter_map(move |a| if f(&a) { Some(a) } else { None })
     }
@@ -277,8 +282,9 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
     /// assert_eq!(events.next(), Some(6));
     /// ```
     pub fn filter_map<B, F>(&self, f: F) -> Stream<B>
-        where B: Send + Sync + Clone + 'static,
-              F: Fn(A) -> Option<B> + Send + Sync + 'static,
+    where
+        B: Send + Sync + Clone + 'static,
+        F: Fn(A) -> Option<B> + Send + Sync + 'static,
     {
         self.map(f).filter_some()
     }
@@ -303,7 +309,10 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
             let src = Arc::new(RwLock::new(Source::new()));
             for parent in &[self, other] {
                 let weak = Arc::downgrade(&src);
-                parent.source.write().unwrap()
+                parent
+                    .source
+                    .write()
+                    .unwrap()
                     .register(move |a| with_weak(&weak, |src| src.send(a)));
             }
             Stream {
@@ -319,7 +328,8 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
     /// The function should ideally commute, as the order of events within a
     /// transaction is not well-defined.
     pub fn coalesce<F>(&self, reducer: F) -> Stream<A>
-        where F: Fn(A, A) -> A + Send + Sync + 'static,
+    where
+        F: Fn(A, A) -> A + Send + Sync + 'static,
     {
         commit(|| coalesce::stream(self, reducer))
     }
@@ -342,7 +352,9 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
     }
 
     /// A blocking iterator over the stream.
-    pub fn events(&self) -> Events<A> { Events::new(self) }
+    pub fn events(&self) -> Events<A> {
+        Events::new(self)
+    }
 
     /// Scan a stream and accumulate its event firings in a signal.
     ///
@@ -360,8 +372,9 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
     /// assert_eq!(sum.sample(), 6);
     /// ```
     pub fn fold<B, F>(&self, initial: B, f: F) -> Signal<B>
-        where B: Send + Sync + Clone + 'static,
-              F: Fn(B, A) -> B + Send + Sync + 'static,
+    where
+        B: Send + Sync + Clone + 'static,
+        F: Fn(B, A) -> B + Send + Sync + 'static,
     {
         Signal::cyclic(|fold| fold.snapshot(self, f).hold(initial))
     }
@@ -385,14 +398,13 @@ impl<A: Clone + Send + Sync + 'static> Stream<Option<A>> {
         commit(|| {
             let src = Arc::new(RwLock::new(Source::new()));
             let weak = Arc::downgrade(&src);
-            self.source.write().unwrap()
-                .register(move |a| a.map_or(
-                    Ok(()),
-                    |a| with_weak(&weak, |src| src.send(a))
-                ));
+            self.source
+                .write()
+                .unwrap()
+                .register(move |a| a.map_or(Ok(()), |a| with_weak(&weak, |src| src.send(a))));
             Stream {
                 source: src,
-                keep_alive: Box::new(self.clone())
+                keep_alive: Box::new(self.clone()),
             }
         })
     }
@@ -431,18 +443,21 @@ impl<A: Send + Sync + Clone + 'static> Stream<Stream<A>> {
     /// assert_eq!(events.next(), Some(5));
     /// ```
     pub fn switch(&self) -> Stream<A> {
-        fn rewire_callbacks<A>(new_stream: Stream<A>, source: Weak<RwLock<Source<A>>>,
-                               terminate: &mut Arc<()>)
-            -> CallbackResult
-            where A: Send + Sync + Clone + 'static,
+        fn rewire_callbacks<A>(
+            new_stream: Stream<A>,
+            source: Weak<RwLock<Source<A>>>,
+            terminate: &mut Arc<()>,
+        ) -> CallbackResult
+        where
+            A: Send + Sync + Clone + 'static,
         {
             *terminate = Arc::new(());
             let weak = Arc::downgrade(&terminate);
-            new_stream.source.write().unwrap().register(move |a|
+            new_stream.source.write().unwrap().register(move |a| {
                 weak.upgrade()
                     .ok_or(CallbackError::Disappeared)
                     .and_then(|_| with_weak(&source, |src| src.send(a)))
-            );
+            });
             Ok(())
         }
         commit(|| {
@@ -460,13 +475,13 @@ impl<A: Send + Sync + Clone + 'static> Stream<Stream<A>> {
     }
 }
 
-
 /// Make a snapshot of a signal, whenever a stream fires an event.
 pub fn snapshot<A, B, C, F>(signal: &Signal<A>, stream: &Stream<B>, f: F) -> Stream<C>
-    where A: Clone + Send + Sync + 'static,
-          B: Clone + Send + Sync + 'static,
-          C: Clone + Send + Sync + 'static,
-          F: Fn(A, B) -> C + Send + Sync + 'static,
+where
+    A: Clone + Send + Sync + 'static,
+    B: Clone + Send + Sync + 'static,
+    C: Clone + Send + Sync + 'static,
+    F: Fn(A, B) -> C + Send + Sync + 'static,
 {
     commit(|| {
         let src = Arc::new(RwLock::new(Source::new()));
@@ -482,7 +497,6 @@ pub fn snapshot<A, B, C, F>(signal: &Signal<A>, stream: &Stream<B>, f: F) -> Str
     })
 }
 
-
 /// A blocking iterator over events in a stream.
 pub struct Events<A> {
     receiver: Receiver<A>,
@@ -496,9 +510,12 @@ impl<A: Send + Sync + 'static> Events<A> {
         commit(|| {
             let (tx, rx) = channel();
             let tx = Mutex::new(tx);
-            stream.source.write().unwrap().register(
-                move |a| tx.lock().unwrap().send(a).map_err(|_| CallbackError::Disappeared)
-            );
+            stream.source.write().unwrap().register(move |a| {
+                tx.lock()
+                    .unwrap()
+                    .send(a)
+                    .map_err(|_| CallbackError::Disappeared)
+            });
             Events {
                 receiver: rx,
                 keep_alive: Box::new(stream.clone()),
@@ -509,7 +526,9 @@ impl<A: Send + Sync + 'static> Events<A> {
 
 impl<A: Send + Sync + 'static> Iterator for Events<A> {
     type Item = A;
-    fn next(&mut self) -> Option<A> { self.receiver.recv().ok() }
+    fn next(&mut self) -> Option<A> {
+        self.receiver.recv().ok()
+    }
 }
 
 /// Creates a new stream.
@@ -519,18 +538,18 @@ impl<A: Send + Sync + 'static> Iterator for Events<A> {
 pub fn build<A, T: BoxClone + 'static>(src: Arc<RwLock<Source<A>>>, keep_alive: &T) -> Stream<A> {
     Stream {
         source: src,
-        keep_alive: keep_alive.box_clone()
+        keep_alive: keep_alive.box_clone(),
     }
 }
 
 #[cfg(test)]
 mod test {
+    use quickcheck::quickcheck;
     use std::thread;
     use std::time::Duration;
-    use quickcheck::quickcheck;
 
-    use crate::testing::{ id, stream_eq };
     use super::*;
+    use crate::testing::{id, stream_eq};
 
     #[test]
     fn sink() {
@@ -564,9 +583,7 @@ mod test {
     #[test]
     fn chain_1() {
         let sink: Sink<i32> = Sink::new();
-        let chain = sink.stream()
-            .map(|x| x / 2)
-            .filter(|&x| x < 3);
+        let chain = sink.stream().map(|x| x / 2).filter(|&x| x < 3);
         let mut events = chain.events();
         sink.send(7);
         sink.send(4);
@@ -588,11 +605,15 @@ mod test {
     fn chain_2() {
         let sink1: Sink<i32> = Sink::new();
         let sink2: Sink<i32> = Sink::new();
-        let mut events = sink1.stream().map(|x| x + 4)
+        let mut events = sink1
+            .stream()
+            .map(|x| x + 4)
             .merge(
-                &sink2.stream()
-                .filter_map(|x| if x < 4 { Some(x) } else { None })
-                .map(|x| x * 5))
+                &sink2
+                    .stream()
+                    .filter_map(|x| if x < 4 { Some(x) } else { None })
+                    .map(|x| x * 5),
+            )
             .events();
         sink1.send(12);
         sink2.send(3);
@@ -650,9 +671,7 @@ mod test {
     #[test]
     fn coalesce() {
         let sink = Sink::new();
-        let stream = sink.stream()
-            .merge(&sink.stream())
-            .coalesce(|a, b| a + b);
+        let stream = sink.stream().merge(&sink.stream()).coalesce(|a, b| a + b);
         let mut events = stream.events();
 
         sink.send(1);
@@ -718,8 +737,12 @@ mod test {
     #[test]
     fn functor_composition() {
         fn check(input: Vec<i32>) -> Result<(), String> {
-            fn f(n: i32) -> i64 { (n + 3) as i64 }
-            fn g(n: i64) -> f64 { n as f64 / 2.5 }
+            fn f(n: i32) -> i64 {
+                (n + 3) as i64
+            }
+            fn g(n: i64) -> f64 {
+                n as f64 / 2.5
+            }
 
             let sink = Sink::new();
             let a = sink.stream();

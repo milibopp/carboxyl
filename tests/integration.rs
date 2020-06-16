@@ -3,8 +3,7 @@
 #[macro_use(lift)]
 extern crate carboxyl;
 
-use carboxyl::{ Sink, Stream };
-
+use carboxyl::{Sink, Stream};
 
 #[test]
 fn switch() {
@@ -15,15 +14,14 @@ fn switch() {
     let output = {
         let stream1 = stream1.stream().hold(Some(-1));
         let stream2 = stream2.stream().hold(Some(-2));
-        button1.stream()
+        button1
+            .stream()
             .map(move |_| stream1.clone())
-            .merge(&button2.stream()
-                .map(move |_| stream2.clone())
-            )
+            .merge(&button2.stream().map(move |_| stream2.clone()))
             .hold(Sink::new().stream().hold(Some(-3)))
             .switch()
     };
-    let fn_output = lift!(|x| x.map_or(0, |x| 2*x), &output);
+    let fn_output = lift!(|x| x.map_or(0, |x| 2 * x), &output);
     assert_eq!(output.sample(), Some(-3));
     assert_eq!(fn_output.sample(), -6);
     button1.send(());

@@ -3,10 +3,11 @@
 //! There are specific functions for arity up to 4, namely lift0, lift1 and so on. However, it is
 //! recommended to just use the macro lift! instead.
 
-use std::sync::Arc;
-use crate::signal::{ Signal, SignalFn, signal_build, signal_current, signal_source, reg_signal, sample_raw };
+use crate::signal::{
+    reg_signal, sample_raw, signal_build, signal_current, signal_source, Signal, SignalFn,
+};
 use crate::transaction::commit;
-
+use std::sync::Arc;
 
 #[macro_export]
 /// Lifting of n-ary functions.
@@ -41,41 +42,47 @@ use crate::transaction::commit;
 /// # }
 /// ```
 macro_rules! lift {
-    ($f: expr)
-        => ( $crate::lift::lift0($f) );
+    ($f: expr) => {
+        $crate::lift::lift0($f)
+    };
 
-    ($f: expr, $a: expr)
-        => ( $crate::lift::lift1($f, $a) );
+    ($f: expr, $a: expr) => {
+        $crate::lift::lift1($f, $a)
+    };
 
-    ($f: expr, $a: expr, $b: expr)
-        => ( $crate::lift::lift2($f, $a, $b) );
+    ($f: expr, $a: expr, $b: expr) => {
+        $crate::lift::lift2($f, $a, $b)
+    };
 
-    ($f: expr, $a: expr, $b: expr, $c: expr)
-        => ( $crate::lift::lift3($f, $a, $b, $c) );
+    ($f: expr, $a: expr, $b: expr, $c: expr) => {
+        $crate::lift::lift3($f, $a, $b, $c)
+    };
 
-    ($f: expr, $a: expr, $b: expr, $c: expr, $d: expr)
-        => ( $crate::lift::lift4($f, $a, $b, $c, $d) );
+    ($f: expr, $a: expr, $b: expr, $c: expr, $d: expr) => {
+        $crate::lift::lift4($f, $a, $b, $c, $d)
+    };
 }
-
 
 /// Lift a 0-ary function.
 pub fn lift0<A, F>(f: F) -> Signal<A>
-    where F: Fn() -> A + Send + Sync + 'static
+where
+    F: Fn() -> A + Send + Sync + 'static,
 {
     commit(|| signal_build(SignalFn::from_fn(f), ()))
 }
 
-
 /// Lift a unary function.
 pub fn lift1<A, B, F>(f: F, sa: &Signal<A>) -> Signal<B>
-    where A: Send + Sync + Clone + 'static,
-          B: Send + Sync + Clone + 'static,
-          F: Fn(A) -> B + Send + Sync + 'static,
+where
+    A: Send + Sync + Clone + 'static,
+    B: Send + Sync + Clone + 'static,
+    F: Fn(A) -> B + Send + Sync + 'static,
 {
     fn make_callback<A, B, F>(f: &Arc<F>, parent: &Signal<A>) -> SignalFn<B>
-        where A: Send + Sync + Clone + 'static,
-              B: Send + Sync + Clone + 'static,
-              F: Fn(A) -> B + Send + Sync + 'static,
+    where
+        A: Send + Sync + Clone + 'static,
+        B: Send + Sync + Clone + 'static,
+        F: Fn(A) -> B + Send + Sync + 'static,
     {
         let pclone = parent.clone();
         let f = f.clone();
@@ -89,27 +96,31 @@ pub fn lift1<A, B, F>(f: F, sa: &Signal<A>) -> Signal<B>
         let f = Arc::new(f);
         let signal = signal_build(make_callback(&f, &sa), ());
         let sa_clone = sa.clone();
-        reg_signal(&mut signal_source(&sa).write().unwrap(), &signal,
-            move |_| make_callback(&f, &sa_clone));
+        reg_signal(
+            &mut signal_source(&sa).write().unwrap(),
+            &signal,
+            move |_| make_callback(&f, &sa_clone),
+        );
         signal
     })
 }
 
-
 /// Lift a binary function.
 pub fn lift2<A, B, C, F>(f: F, sa: &Signal<A>, sb: &Signal<B>) -> Signal<C>
-    where A: Send + Sync + Clone + 'static,
-          B: Send + Sync + Clone + 'static,
-          C: Send + Sync + Clone + 'static,
-          F: Fn(A, B) -> C + Send + Sync + 'static,
+where
+    A: Send + Sync + Clone + 'static,
+    B: Send + Sync + Clone + 'static,
+    C: Send + Sync + Clone + 'static,
+    F: Fn(A, B) -> C + Send + Sync + 'static,
 {
     fn make_callback<A, B, C, F>(f: &Arc<F>, sa: &Signal<A>, sb: &Signal<B>) -> SignalFn<C>
-        where A: Send + Sync + Clone + 'static,
-              B: Send + Sync + Clone + 'static,
-              C: Send + Sync + Clone + 'static,
-              F: Fn(A, B) -> C + Send + Sync + 'static,
+    where
+        A: Send + Sync + Clone + 'static,
+        B: Send + Sync + Clone + 'static,
+        C: Send + Sync + Clone + 'static,
+        F: Fn(A, B) -> C + Send + Sync + 'static,
     {
-        use crate::signal::SignalFn::{ Const, Func };
+        use crate::signal::SignalFn::{Const, Func};
         let sa_clone = sa.clone();
         let sb_clone = sb.clone();
         let f = f.clone();
@@ -121,14 +132,14 @@ pub fn lift2<A, B, C, F>(f: F, sa: &Signal<A>, sb: &Signal<B>) -> Signal<C>
             (&Const(ref a), &Func(_)) => {
                 let a = a.clone();
                 SignalFn::from_fn(move || f(a.clone(), sample_raw(&sb_clone)))
-            },
+            }
             (&Func(_), &Const(ref b)) => {
                 let b = b.clone();
                 SignalFn::from_fn(move || f(sample_raw(&sa_clone), b.clone()))
-            },
-            (&Func(_), &Func(_)) => SignalFn::from_fn(
-                move || f(sample_raw(&sa_clone), sample_raw(&sb_clone))
-            ),
+            }
+            (&Func(_), &Func(_)) => {
+                SignalFn::from_fn(move || f(sample_raw(&sa_clone), sample_raw(&sb_clone)))
+            }
         }
     }
 
@@ -151,39 +162,48 @@ pub fn lift2<A, B, C, F>(f: F, sa: &Signal<A>, sb: &Signal<B>) -> Signal<C>
 }
 
 /// Lift a ternary function.
-pub fn lift3<F, A, B, C, Ret>(f: F, ca: &Signal<A>, cb: &Signal<B>, cc: &Signal<C>)
-    -> Signal<Ret>
-where F: Fn(A, B, C) -> Ret + Send + Sync + 'static,
-      A: Send + Sync + Clone + 'static,
-      B: Send + Sync + Clone + 'static,
-      C: Send + Sync + Clone + 'static,
-      Ret: Send + Sync + Clone + 'static,
+pub fn lift3<F, A, B, C, Ret>(f: F, ca: &Signal<A>, cb: &Signal<B>, cc: &Signal<C>) -> Signal<Ret>
+where
+    F: Fn(A, B, C) -> Ret + Send + Sync + 'static,
+    A: Send + Sync + Clone + 'static,
+    B: Send + Sync + Clone + 'static,
+    C: Send + Sync + Clone + 'static,
+    Ret: Send + Sync + Clone + 'static,
 {
-    lift2(move |(a, b), c| f(a, b, c), &lift2(|a, b| (a, b), ca, cb), cc)
+    lift2(
+        move |(a, b), c| f(a, b, c),
+        &lift2(|a, b| (a, b), ca, cb),
+        cc,
+    )
 }
 
 /// Lift a quarternary function.
-pub fn lift4<F, A, B, C, D, Ret>(f: F, ca: &Signal<A>, cb: &Signal<B>, cc: &Signal<C>, cd: &Signal<D>)
-    -> Signal<Ret>
-where F: Fn(A, B, C, D) -> Ret + Send + Sync + 'static,
-      A: Send + Sync + Clone + 'static,
-      B: Send + Sync + Clone + 'static,
-      C: Send + Sync + Clone + 'static,
-      D: Send + Sync + Clone + 'static,
-      Ret: Send + Sync + Clone + 'static,
+pub fn lift4<F, A, B, C, D, Ret>(
+    f: F,
+    ca: &Signal<A>,
+    cb: &Signal<B>,
+    cc: &Signal<C>,
+    cd: &Signal<D>,
+) -> Signal<Ret>
+where
+    F: Fn(A, B, C, D) -> Ret + Send + Sync + 'static,
+    A: Send + Sync + Clone + 'static,
+    B: Send + Sync + Clone + 'static,
+    C: Send + Sync + Clone + 'static,
+    D: Send + Sync + Clone + 'static,
+    Ret: Send + Sync + Clone + 'static,
 {
     lift2(
         move |(a, b), (c, d)| f(a, b, c, d),
         &lift2(|a, b| (a, b), ca, cb),
-        &lift2(|c, d| (c, d), cc, cd)
+        &lift2(|c, d| (c, d), cc, cd),
     )
 }
 
-
 #[cfg(test)]
 mod test {
-    use crate::stream::Sink;
     use crate::signal::Signal;
+    use crate::stream::Sink;
 
     #[test]
     fn lift0() {
@@ -201,8 +221,11 @@ mod test {
     fn lift2() {
         let sink1 = Sink::new();
         let sink2 = Sink::new();
-        let lifted = lift!(|a, b| a + b, &sink1.stream().hold(0),
-            &sink2.stream().hold(3));
+        let lifted = lift!(
+            |a, b| a + b,
+            &sink1.stream().hold(0),
+            &sink2.stream().hold(3)
+        );
         assert_eq!(lifted.sample(), 3);
         sink1.send(1);
         assert_eq!(lifted.sample(), 4);
@@ -221,11 +244,13 @@ mod test {
     fn lift3() {
         let sink = Sink::new();
         assert_eq!(
-            lift!(|x, y, z| x + 2 * y + z,
+            lift!(
+                |x, y, z| x + 2 * y + z,
                 &sink.stream().hold(5),
                 &sink.stream().hold(3),
                 &sink.stream().hold(-4)
-            ).sample(),
+            )
+            .sample(),
             7
         );
     }
@@ -234,12 +259,14 @@ mod test {
     fn lift4() {
         let sink = Sink::new();
         assert_eq!(
-            lift!(|w, x, y, z| 4 * w + x + 2 * y + z,
+            lift!(
+                |w, x, y, z| 4 * w + x + 2 * y + z,
                 &sink.stream().hold(-2),
                 &sink.stream().hold(5),
                 &sink.stream().hold(3),
                 &sink.stream().hold(-4)
-            ).sample(),
+            )
+            .sample(),
             -1
         );
     }

@@ -16,6 +16,7 @@ script:
   - |
     rustc --version
     cargo --version
+    travis-cargo fmt -- --check &&
     travis-cargo build &&
     travis-cargo test &&
     travis-cargo doc &&

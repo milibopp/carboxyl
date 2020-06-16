@@ -1,8 +1,8 @@
 //! FRP benchmarks from https://github.com/tsurucapital/frp-benchmarks
 
-use rand::{SeedableRng, seq::IteratorRandom, rngs::StdRng};
 use carboxyl::{Sink, Stream};
-use criterion::{criterion_group, criterion_main, Criterion, Bencher};
+use criterion::{criterion_group, criterion_main, Bencher, Criterion};
+use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
 
 /// First-order benchmark.
 ///
@@ -14,16 +14,23 @@ use criterion::{criterion_group, criterion_main, Criterion, Bencher};
 fn first_order(n_sinks: usize, n_steps: usize, b: &mut Bencher<'_>) {
     // Setup network
     let sinks: Vec<Sink<String>> = (0..n_sinks).map(|_| Sink::new()).collect();
-    let _printers: Vec<Stream<()>> = sinks.iter()
-        .map(|sink| sink.stream().map(|s| { format!("{}", s); }))
+    let _printers: Vec<Stream<()>> = sinks
+        .iter()
+        .map(|sink| {
+            sink.stream().map(|s| {
+                format!("{}", s);
+            })
+        })
         .collect();
 
     // Feed events
     let mut rng = StdRng::from_entropy();
-    b.iter(|| for k in 0..n_steps {
-        let s = format!("{}", k);
-        for sink in sinks.iter().choose_multiple(&mut rng, 10) {
-            sink.send(s.clone());
+    b.iter(|| {
+        for k in 0..n_steps {
+            let s = format!("{}", k);
+            for sink in sinks.iter().choose_multiple(&mut rng, 10) {
+                sink.send(s.clone());
+            }
         }
     });
 }
@@ -31,9 +38,11 @@ fn first_order(n_sinks: usize, n_steps: usize, b: &mut Bencher<'_>) {
 /// A small reference benchmark to do the same amount of actual work without FRP
 fn first_order_1k_ref(b: &mut Bencher<'_>) {
     let mut rng = StdRng::from_entropy();
-    b.iter(|| for i in 0..1_000 {
-        for _k in (0..1_000).choose_multiple(&mut rng, 10) {
-            format!("{}", i);
+    b.iter(|| {
+        for i in 0..1_000 {
+            for _k in (0..1_000).choose_multiple(&mut rng, 10) {
+                format!("{}", i);
+            }
         }
     });
 }

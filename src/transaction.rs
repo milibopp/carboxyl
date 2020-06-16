@@ -3,11 +3,10 @@
 //! At the moment, this is really just a global static mutex, that needs to be
 //! locked, to ensure the atomicity of a transaction.
 
-use std::sync::Mutex;
-use std::cell::RefCell;
 use crate::fnbox::FnBox;
 use lazy_static::lazy_static;
-
+use std::cell::RefCell;
+use std::sync::Mutex;
 
 lazy_static! {
     /// The global transaction lock.
@@ -23,10 +22,8 @@ thread_local!(
         RefCell::new(None)
 );
 
-
 /// A callback.
 type Callback = Box<dyn FnBox + 'static>;
-
 
 /// A transaction.
 #[derive(Default)]
@@ -37,9 +34,7 @@ pub struct Transaction {
 impl Transaction {
     /// Create a new transaction
     fn new() -> Transaction {
-        Transaction {
-            finalizers: vec![],
-        }
+        Transaction { finalizers: vec![] }
     }
 
     /// Add a finalizing callback. This should not have far reaching
@@ -58,7 +53,6 @@ impl Transaction {
     }
 }
 
-
 /// Commit a transaction.
 ///
 /// If the thread is not running any transactions currently, the global lock is
@@ -74,8 +68,10 @@ pub fn commit<A, F: FnOnce() -> A>(body: F) -> A {
     });
     // Acquire global lock if necessary
     let _lock = match prev {
-        None => Some(TRANSACTION_MUTEX.lock()
-                .expect("global transaction mutex poisoned")
+        None => Some(
+            TRANSACTION_MUTEX
+                .lock()
+                .expect("global transaction mutex poisoned"),
         ),
         Some(_) => None,
     };
@@ -88,37 +84,33 @@ pub fn commit<A, F: FnOnce() -> A>(body: F) -> A {
         Some(ref mut trans) => with_current(|cur| trans.finalizers.append(&mut cur.finalizers)),
         None => loop {
             let callbacks = with_current(Transaction::finalizers);
-            if callbacks.is_empty() { break }
+            if callbacks.is_empty() {
+                break;
+            }
             for callback in callbacks {
                 callback.call_box();
             }
-        }
+        },
     }
 
     // Drop the transaction
-    CURRENT_TRANSACTION.with(|current|
-        mem::swap(&mut prev, &mut current.borrow_mut())
-    );
+    CURRENT_TRANSACTION.with(|current| mem::swap(&mut prev, &mut current.borrow_mut()));
 
     // Return
     result
 }
 
-
 /// Register a callback during a transaction.
 pub fn with_current<A, F: FnOnce(&mut Transaction) -> A>(action: F) -> A {
-    CURRENT_TRANSACTION.with(|current|
-        match *current.borrow_mut() {
-            Some(ref mut trans) => action(trans),
-            _ => panic!("there is no active transaction to register a callback"),
-        }
-    )
+    CURRENT_TRANSACTION.with(|current| match *current.borrow_mut() {
+        Some(ref mut trans) => action(trans),
+        _ => panic!("there is no active transaction to register a callback"),
+    })
 }
 
 pub fn later<F: FnOnce() + 'static>(action: F) {
     with_current(|c| c.later(action))
 }
-
 
 #[cfg(test)]
 mod test {
@@ -153,18 +145,22 @@ mod test {
         let guards: Vec<_> = (0..3)
             .map(|_| {
                 let v = v.clone();
-                thread::spawn(move || commit(move || {
-                    // Acquire locks independently, s.t. commit atomicity does
-                    // not rely on the local locks here
-                    *v.lock().unwrap() *= 2;
-                    // …and sleep for a bit
-                    thread::sleep(Duration::from_millis(1));
-                    *v.lock().unwrap() -= 1;
-                }))
+                thread::spawn(move || {
+                    commit(move || {
+                        // Acquire locks independently, s.t. commit atomicity does
+                        // not rely on the local locks here
+                        *v.lock().unwrap() *= 2;
+                        // …and sleep for a bit
+                        thread::sleep(Duration::from_millis(1));
+                        *v.lock().unwrap() -= 1;
+                    })
+                })
             })
             .collect();
         // Rejoin with all guards
-        for guard in guards { guard.join().ok().expect("thread failed"); }
+        for guard in guards {
+            guard.join().ok().expect("thread failed");
+        }
         // Check result
         assert_eq!(&*v.lock().unwrap(), &17);
     }
