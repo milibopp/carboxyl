@@ -16,7 +16,7 @@ pub enum CallbackError {
 pub type CallbackResult<T=()> = Result<T, CallbackError>;
 
 /// A boxed callback.
-type Callback<A> = Box<FnMut(A) -> CallbackResult + Send + Sync + 'static>;
+type Callback<A> = Box<dyn FnMut(A) -> CallbackResult + Send + Sync + 'static>;
 
 
 /// Perform some callback on a weak reference to a mutex and handle errors

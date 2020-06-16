@@ -8,23 +8,23 @@ use std::cell::RefCell;
 use ::fnbox::FnBox;
 
 
-/// The global transaction lock.
-///
-/// TODO: revert this to use a static mutex, as soon as that is stabilized in
-/// the standard library.
 lazy_static! {
+    /// The global transaction lock.
+    ///
+    /// TODO: revert this to use a static mutex, as soon as that is stabilized in
+    /// the standard library.
     static ref TRANSACTION_MUTEX: Mutex<()> = Mutex::new(());
 }
 
-/// Registry for callbacks to be executed at the end of a transaction.
 thread_local!(
+    /// Registry for callbacks to be executed at the end of a transaction.
     static CURRENT_TRANSACTION: RefCell<Option<Transaction>> =
         RefCell::new(None)
 );
 
 
 /// A callback.
-type Callback = Box<FnBox + 'static>;
+type Callback = Box<dyn FnBox + 'static>;
 
 
 /// A transaction.

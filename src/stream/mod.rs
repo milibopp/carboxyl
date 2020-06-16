@@ -126,11 +126,11 @@ impl<A: Send + Sync + Clone + 'static> Sink<A> {
 /// Trait to wrap cloning of boxed values in a object-safe manner
 pub trait BoxClone: Sync + Send {
     /// Clone the object as a boxed trait object
-    fn box_clone(&self) -> Box<BoxClone>; 
+    fn box_clone(&self) -> Box<dyn BoxClone>;
 }
 
 impl<T: Sync + Send + Clone + 'static> BoxClone for T {
-    fn box_clone(&self) -> Box<BoxClone> {
+    fn box_clone(&self) -> Box<dyn BoxClone> {
         Box::new(self.clone())
     }
 }
@@ -189,7 +189,7 @@ pub fn source<A>(stream: &Stream<A>) -> &Arc<RwLock<Source<A>>> {
 pub struct Stream<A> {
     source: Arc<RwLock<Source<A>>>,
     #[allow(dead_code)]
-    keep_alive: Box<BoxClone>,
+    keep_alive: Box<dyn BoxClone>,
 }
 
 impl<A> Clone for Stream<A> {
@@ -209,7 +209,7 @@ impl<A: Clone + Send + Sync + 'static> Stream<A> {
     pub fn never() -> Stream<A> {
         Stream {
             source: Arc::new(RwLock::new(Source::new())),
-            keep_alive: Box::new(()) 
+            keep_alive: Box::new(())
         }
     }
 
@@ -487,7 +487,7 @@ pub fn snapshot<A, B, C, F>(signal: &Signal<A>, stream: &Stream<B>, f: F) -> Str
 pub struct Events<A> {
     receiver: Receiver<A>,
     #[allow(dead_code)]
-    keep_alive: Box<BoxClone>,
+    keep_alive: Box<dyn BoxClone>,
 }
 
 impl<A: Send + Sync + 'static> Events<A> {
