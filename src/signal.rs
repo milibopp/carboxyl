@@ -1,6 +1,6 @@
 //! Continuous time signals
 
-use std::sync::{ Arc, Mutex, RwLock };
+use std::sync::{ Arc, Mutex, RwLock, Weak };
 use std::ops::Deref;
 use std::fmt;
 #[cfg(test)]
@@ -8,7 +8,7 @@ use quickcheck::{ Arbitrary, Gen };
 
 use source::{ Source, with_weak, CallbackError };
 use stream::{ self, BoxClone, Stream };
-use transaction::{ commit, end };
+use transaction::{ commit, later };
 use pending::Pending;
 use lift;
 #[cfg(test)]
@@ -39,7 +39,7 @@ impl<A: Clone + 'static> FuncSignal<A> {
             cached => {
                 // Register callback to reset cache at the end of the transaction
                 let cache = self.cache.clone();
-                end(move || {
+                later(move || {
                     let mut live = cache.lock().unwrap();
                     *live = None;
                 });
@@ -83,7 +83,7 @@ pub fn reg_signal<A, B, F>(parent_source: &mut Source<A>, signal: &Signal<B>, ha
     let weak_source = Arc::downgrade(&signal.source);
     let weak_current = Arc::downgrade(&signal.current);
     parent_source.register(move |a|
-        weak_current.upgrade().map(|cur| end(
+        weak_current.upgrade().map(|cur| later(
             move || { let _ = cur.write().map(|mut cur| cur.update()); }))
             .ok_or(CallbackError::Disappeared)
         .and(with_weak(&weak_current, |cur| cur.queue(handler(a))))
@@ -339,6 +339,106 @@ impl<A: Clone + Send + Sync + 'static> Signal<Signal<A>> {
             reg_signal(&mut self.source.write().unwrap(), &signal,
                 move |_| make_callback(&parent));
             signal
+        })
+    }
+}
+
+impl<A: Clone + Send + Sync + 'static> Signal<Stream<A>> {
+    /// Switch between streams held by signals.
+    ///
+    /// This transforms a `Signal<Stream<A>>` into a `Stream<A>`. The
+    /// resulting stream switches between the streams held by the
+    /// signal, receiving the same events as the stream which is the
+    /// current signal's value.
+    ///
+    /// ```
+    /// # use carboxyl::Signal;
+    /// # use carboxyl::Sink;
+    /// # use carboxyl::Stream;
+    ///
+    /// // the Control struct has a stream as member that will fire with a
+    /// // new struct to replace the old one
+    /// #[derive(Clone)]
+    /// struct Control {
+    ///     change: Stream<Control>,
+    ///     value: i32,
+    /// }
+    ///
+    /// let sink1 = Sink::new();
+    /// let sink2 = Sink::new();
+    ///
+    /// let initial = Control {
+    ///     change: sink1.stream(),
+    ///     value: 1,
+    /// };
+    ///
+    /// // create a self-referential signal that holds a stream which will fire
+    /// // with a new value for the signal
+    /// let sig = Signal::<Control>::cyclic(
+    ///     |sig| {
+    ///         let str = sig.map(|c| c.change).switch();
+    ///         sig.snapshot(&str, |_, c| c).hold(initial)
+    ///     }
+    /// );
+    ///
+    /// assert_eq!(sig.sample().value, 1);
+    ///
+    /// // change signal's value by firing an event into the stream held by the signal
+    /// sink1.send(
+    ///     Control {
+    ///         change: sink2.stream(),
+    ///         value: 2,
+    ///     }
+    /// );
+    ///
+    /// assert_eq!(sig.sample().value, 2);
+    /// ```
+    ///
+    pub fn switch(&self) -> Stream<A>
+    {
+        fn reg_callback<A: Send + Sync + Clone + 'static>(
+            parent: &Signal<Stream<A>>,
+            weak_src: Weak<RwLock<Source<A>>>,
+            weak_term: Weak<()>
+        )
+        {
+            let stream_a = sample_raw(parent);
+            stream::source(&stream_a).write().unwrap().register(
+                move |a| {
+                    weak_term.upgrade()
+                             .ok_or(CallbackError::Disappeared)
+                             .and_then(|_| with_weak(&weak_src, |src| src.send(a)))
+                }
+            );
+        }
+
+        commit(|| {
+            let mut terminate = Arc::new(());
+            let src = Arc::new(RwLock::new(Source::new()));
+
+            later({
+                let parent = self.clone();
+                let weak_src = Arc::downgrade(&src);
+                let weak_term = Arc::downgrade(&terminate);
+                move || reg_callback(&parent, weak_src, weak_term)
+            });
+
+            self.source.write().unwrap().register({
+                let parent = self.clone();
+                let weak_src = Arc::downgrade(&src);
+                move |_| {
+                    let parent = parent.clone();
+                    let weak_src = weak_src.clone();
+
+                    terminate = Arc::new(());
+                    let weak_term = Arc::downgrade(&terminate);
+
+                    later(move || reg_callback(&parent, weak_src, weak_term));
+                    Ok(())
+                }
+            });
+
+            stream::build(src, self)
         })
     }
 }
@@ -642,5 +742,30 @@ mod test {
         sink.send(3);
         assert_eq!(sum.sample(), 3);
         assert_eq!(events.next(), Some(3));
+    }
+
+    #[test]
+    fn switch_signal_stream() {
+        let control_sink = Sink::new();
+        let control_stream = control_sink.stream();
+
+        let sink1 = Sink::new();
+        let sink2 = Sink::new();
+
+        let mut switched = control_stream.fold(sink1.stream(), |_, s| s).switch().events();
+
+        sink2.send(1);
+        sink1.send(2);
+        assert_eq!(switched.next(), Some(2));
+
+        control_sink.send(sink2.stream());
+        sink1.send(3);
+        sink2.send(4);
+        assert_eq!(switched.next(), Some(4));
+
+        control_sink.send(sink1.stream());
+        sink2.send(5);
+        sink1.send(6);
+        assert_eq!(switched.next(), Some(6));
     }
 }
