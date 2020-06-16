@@ -17,7 +17,7 @@ lazy_static = "0.1"
 [dev-dependencies]
 rand = "0.3"
 quickcheck = "0.9"
-skeptic = "0.6"
+skeptic = "0.13"
 
 [build-dependencies]
-skeptic = "0.6"
+skeptic = "0.13"
