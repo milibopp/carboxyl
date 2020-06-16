@@ -3,38 +3,45 @@
 #[macro_use(lift)]
 extern crate carboxyl;
 
-use carboxyl::{ Sink, Signal };
-
+use carboxyl::{Signal, Sink};
 
 #[test]
 fn drag_drop_example() {
     #[derive(Copy, Debug, Clone)]
-    enum Event { Add(i32), Drag(usize, i32), Drop }
+    enum Event {
+        Add(i32),
+        Drag(usize, i32),
+        Drop,
+    }
     let sink = Sink::new();
     let rects = Signal::<Vec<i32>>::cyclic(|rects| {
         let events = sink.stream();
 
-        let spawned = rects.snapshot(&events,
-            |mut rects, ev| match ev {
-                Event::Add(r) => { rects.push(r); rects },
+        let spawned = rects
+            .snapshot(&events, |mut rects, ev| match ev {
+                Event::Add(r) => {
+                    rects.push(r);
+                    rects
+                }
                 _ => rects,
             })
             .hold(vec![300]);
 
-        events.filter_map({
-            let spawned = spawned.clone();
-            move |ev| match ev {
-                Event::Drag(idx, pos) => {
-                Some(lift!(
-                    move |mut rects| {
-                        rects[idx] += pos;
-                        rects
-                    },
-                    &spawned
-                ))},
-                Event::Drop => Some(spawned.clone()),
-                _ => None,
-            }})
+        events
+            .filter_map({
+                let spawned = spawned.clone();
+                move |ev| match ev {
+                    Event::Drag(idx, pos) => Some(lift!(
+                        move |mut rects| {
+                            rects[idx] += pos;
+                            rects
+                        },
+                        &spawned
+                    )),
+                    Event::Drop => Some(spawned.clone()),
+                    _ => None,
+                }
+            })
             .hold(spawned.clone())
             .switch()
     });

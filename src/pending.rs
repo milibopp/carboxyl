@@ -2,7 +2,6 @@
 
 use std::ops::Deref;
 
-
 /// A pending value. This is a wrapper type that allows one to queue one new
 /// value without actually overwriting the old value. Later the most recently
 /// queued value can be updated.
@@ -14,7 +13,10 @@ pub struct Pending<T> {
 impl<T> Pending<T> {
     /// Create a new pending value.
     pub fn new(t: T) -> Pending<T> {
-        Pending { current: t, update: None }
+        Pending {
+            current: t,
+            update: None,
+        }
     }
 
     /// Put an item in the queue. Ignores any previously queued items.
@@ -37,9 +39,10 @@ impl<T> Pending<T> {
 
 impl<T> Deref for Pending<T> {
     type Target = T;
-    fn deref(&self) -> &T { &self.current }
+    fn deref(&self) -> &T {
+        &self.current
+    }
 }
-
 
 #[cfg(test)]
 mod test {

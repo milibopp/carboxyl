@@ -135,15 +135,15 @@
 
 #![warn(missing_docs)]
 
-pub use crate::stream::{ Sink, Stream };
-pub use crate::signal::{ Signal };
+pub use crate::signal::Signal;
+pub use crate::stream::{Sink, Stream};
 
-mod transaction;
-mod source;
-mod pending;
-mod stream;
-mod signal;
 mod fnbox;
+mod pending;
+mod signal;
+mod source;
+mod stream;
+mod transaction;
 #[macro_use]
 pub mod lift;
 #[cfg(test)]

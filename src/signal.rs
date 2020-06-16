@@ -1,19 +1,18 @@
 //! Continuous time signals
 
-use std::sync::{ Arc, Mutex, RwLock, Weak };
-use std::ops::Deref;
-use std::fmt;
 #[cfg(test)]
-use quickcheck::{ Arbitrary, Gen };
+use quickcheck::{Arbitrary, Gen};
+use std::fmt;
+use std::ops::Deref;
+use std::sync::{Arc, Mutex, RwLock, Weak};
 
-use crate::source::{ Source, with_weak, CallbackError };
-use crate::stream::{ self, BoxClone, Stream };
-use crate::transaction::{ commit, later };
-use crate::pending::Pending;
 use crate::lift;
+use crate::pending::Pending;
+use crate::source::{with_weak, CallbackError, Source};
+use crate::stream::{self, BoxClone, Stream};
 #[cfg(test)]
 use crate::testing::ArcFn;
-
+use crate::transaction::{commit, later};
 
 /// A functional signal. Caches its return value during a transaction.
 pub struct FuncSignal<A> {
@@ -47,11 +46,10 @@ impl<A: Clone + 'static> FuncSignal<A> {
                 let value = (self.func)();
                 *cached = Some(value.clone());
                 value
-            },
+            }
         }
     }
 }
-
 
 pub enum SignalFn<A> {
     Const(A),
@@ -73,28 +71,33 @@ impl<A: Clone + 'static> SignalFn<A> {
     }
 }
 
-
 /// Helper function to register callback handlers related to signal construction.
 pub fn reg_signal<A, B, F>(parent_source: &mut Source<A>, signal: &Signal<B>, handler: F)
-    where A: Send + Sync + 'static,
-          B: Send + Sync + 'static,
-          F: Fn(A) -> SignalFn<B> + Send + Sync + 'static,
+where
+    A: Send + Sync + 'static,
+    B: Send + Sync + 'static,
+    F: Fn(A) -> SignalFn<B> + Send + Sync + 'static,
 {
     let weak_source = Arc::downgrade(&signal.source);
     let weak_current = Arc::downgrade(&signal.current);
-    parent_source.register(move |a|
-        weak_current.upgrade().map(|cur| later(
-            move || { let _ = cur.write().map(|mut cur| cur.update()); }))
+    parent_source.register(move |a| {
+        weak_current
+            .upgrade()
+            .map(|cur| {
+                later(move || {
+                    let _ = cur.write().map(|mut cur| cur.update());
+                })
+            })
             .ok_or(CallbackError::Disappeared)
-        .and(with_weak(&weak_current, |cur| cur.queue(handler(a))))
-        .and(with_weak(&weak_source, |src| src.send(())))
-    );
+            .and(with_weak(&weak_current, |cur| cur.queue(handler(a))))
+            .and(with_weak(&weak_source, |src| src.send(())))
+    });
 }
-
 
 /// External helper function to build a signal.
 pub fn signal_build<A, K>(func: SignalFn<A>, keep_alive: K) -> Signal<A>
-        where K: Send + Sync + Clone + 'static
+where
+    K: Send + Sync + Clone + 'static,
 {
     Signal::build(func, keep_alive)
 }
@@ -113,7 +116,6 @@ pub fn signal_source<A>(signal: &Signal<A>) -> &Arc<RwLock<Source<()>>> {
 pub fn sample_raw<A: Clone + 'static>(signal: &Signal<A>) -> A {
     signal.current.read().unwrap().call()
 }
-
 
 /// A continuous signal that changes over time.
 ///
@@ -169,7 +171,8 @@ impl<A> Clone for Signal<A> {
 
 impl<A> Signal<A> {
     fn build<K>(func: SignalFn<A>, keep_alive: K) -> Signal<A>
-        where K: Send + Sync + Clone + 'static
+    where
+        K: Send + Sync + Clone + 'static,
     {
         Signal {
             current: Arc::new(RwLock::new(Pending::new(func))),
@@ -204,7 +207,8 @@ impl<A: Clone + Send + Sync + 'static> Signal<A> {
     /// loops that depend on the sampling behaviour of a signal before a
     /// transaction.
     pub fn cyclic<F>(def: F) -> Signal<A>
-        where F: FnOnce(&Signal<A>) -> Signal<A>
+    where
+        F: FnOnce(&Signal<A>) -> Signal<A>,
     {
         commit(|| {
             let cycle = SignalCycle::new();
@@ -236,9 +240,10 @@ impl<A: Clone + Send + Sync + 'static> Signal<A> {
     /// assert_eq!(events.next(), Some((4, 3.0)));
     /// ```
     pub fn snapshot<B, C, F>(&self, stream: &Stream<B>, f: F) -> Stream<C>
-        where B: Clone + Send + Sync + 'static,
-              C: Clone + Send + Sync + 'static,
-              F: Fn(A, B) -> C + Send + Sync + 'static,
+    where
+        B: Clone + Send + Sync + 'static,
+        C: Clone + Send + Sync + 'static,
+        F: Fn(A, B) -> C + Send + Sync + 'static,
     {
         stream::snapshot(self, stream, f)
     }
@@ -247,8 +252,9 @@ impl<A: Clone + Send + Sync + 'static> Signal<A> {
     ///
     /// Same as `lift!` with a single argument signal.
     pub fn map<B, F>(&self, function: F) -> Signal<B>
-        where B: Clone + Send + Sync + 'static,
-              F: Fn(A) -> B + Send + Sync + 'static
+    where
+        B: Clone + Send + Sync + 'static,
+        F: Fn(A) -> B + Send + Sync + 'static,
     {
         lift::lift1(function, self)
     }
@@ -325,19 +331,19 @@ impl<A: Clone + Send + Sync + 'static> Signal<Signal<A>> {
     /// ```
     pub fn switch(&self) -> Signal<A> {
         fn make_callback<A>(parent: &Signal<Signal<A>>) -> SignalFn<A>
-            where A: Send + Clone + Sync + 'static,
+        where
+            A: Send + Clone + Sync + 'static,
         {
             // TODO: use information on inner value
             let current_signal = parent.current.clone();
-            SignalFn::from_fn(move ||
-                sample_raw(&current_signal.read().unwrap().call())
-            )
+            SignalFn::from_fn(move || sample_raw(&current_signal.read().unwrap().call()))
         }
         commit(|| {
             let signal = Signal::build(make_callback(self), ());
             let parent = self.clone();
-            reg_signal(&mut self.source.write().unwrap(), &signal,
-                move |_| make_callback(&parent));
+            reg_signal(&mut self.source.write().unwrap(), &signal, move |_| {
+                make_callback(&parent)
+            });
             signal
         })
     }
@@ -394,22 +400,22 @@ impl<A: Clone + Send + Sync + 'static> Signal<Stream<A>> {
     /// assert_eq!(sig.sample().value, 2);
     /// ```
     ///
-    pub fn switch(&self) -> Stream<A>
-    {
+    pub fn switch(&self) -> Stream<A> {
         fn reg_callback<A: Send + Sync + Clone + 'static>(
             parent: &Signal<Stream<A>>,
             weak_src: Weak<RwLock<Source<A>>>,
-            weak_term: Weak<()>
-        )
-        {
+            weak_term: Weak<()>,
+        ) {
             let stream_a = sample_raw(parent);
-            stream::source(&stream_a).write().unwrap().register(
-                move |a| {
-                    weak_term.upgrade()
-                             .ok_or(CallbackError::Disappeared)
-                             .and_then(|_| with_weak(&weak_src, |src| src.send(a)))
-                }
-            );
+            stream::source(&stream_a)
+                .write()
+                .unwrap()
+                .register(move |a| {
+                    weak_term
+                        .upgrade()
+                        .ok_or(CallbackError::Disappeared)
+                        .and_then(|_| with_weak(&weak_src, |src| src.send(a)))
+                });
         }
 
         commit(|| {
@@ -445,8 +451,9 @@ impl<A: Clone + Send + Sync + 'static> Signal<Stream<A>> {
 
 #[cfg(test)]
 impl<A, B> Signal<ArcFn<A, B>>
-    where A: Clone + Send + Sync + 'static,
-          B: Clone + Send + Sync + 'static,
+where
+    A: Clone + Send + Sync + 'static,
+    B: Clone + Send + Sync + 'static,
 {
     /// Applicative functionality. Applies a signal of function to a signal of
     /// its argument.
@@ -466,7 +473,9 @@ impl<A: Arbitrary + Sync + Clone + 'static> Arbitrary for Signal<A> {
             lift::lift0(move || {
                 let mut n = n.lock().unwrap();
                 *n += 1;
-                if *n >= values.len() { *n = 0 }
+                if *n >= values.len() {
+                    *n = 0
+                }
                 values[*n].clone()
             })
         }
@@ -476,14 +485,17 @@ impl<A: Arbitrary + Sync + Clone + 'static> Arbitrary for Signal<A> {
 impl<A: fmt::Debug + Clone + 'static> fmt::Debug for Signal<A> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         commit(|| match **self.current.read().unwrap() {
-            SignalFn::Const(ref a) =>
-                fmt.debug_struct("Signal::const").field("value", &a).finish(),
-            SignalFn::Func(ref f) =>
-                fmt.debug_struct("Signal::fn").field("current", &f.call()).finish(),
+            SignalFn::Const(ref a) => fmt
+                .debug_struct("Signal::const")
+                .field("value", &a)
+                .finish(),
+            SignalFn::Func(ref f) => fmt
+                .debug_struct("Signal::fn")
+                .field("current", &f.call())
+                .finish(),
         })
     }
 }
-
 
 /// Forward declaration of a signal to create value loops.
 struct SignalCycle<A> {
@@ -494,14 +506,17 @@ impl<A: Send + Sync + Clone + 'static> SignalCycle<A> {
     /// Forward-declare a new signal.
     pub fn new() -> SignalCycle<A> {
         const ERR: &'static str = "sampled on forward-declaration of signal";
-        SignalCycle { signal: Signal::build(SignalFn::from_fn(|| panic!(ERR)), ()) }
+        SignalCycle {
+            signal: Signal::build(SignalFn::from_fn(|| panic!(ERR)), ()),
+        }
     }
 
     /// Provide the signal with a definition.
     pub fn define(self, definition: Signal<A>) -> Signal<A> {
         /// Generate a callback from the signal definition's current value.
         fn make_callback<A>(current_def: &Arc<RwLock<Pending<SignalFn<A>>>>) -> SignalFn<A>
-            where A: Send + Sync + Clone + 'static
+        where
+            A: Send + Sync + Clone + 'static,
         {
             match *current_def.read().unwrap().future() {
                 SignalFn::Const(ref a) => SignalFn::Const(a.clone()),
@@ -516,41 +531,53 @@ impl<A: Send + Sync + Clone + 'static> SignalCycle<A> {
             }
         }
         commit(move || {
-            *self.signal.current.write().unwrap() = Pending::new(make_callback(&definition.current));
+            *self.signal.current.write().unwrap() =
+                Pending::new(make_callback(&definition.current));
             let weak_parent = Arc::downgrade(&definition.current);
-            reg_signal(&mut definition.source.write().unwrap(), &self.signal,
-                move |_| make_callback(&weak_parent.upgrade().unwrap()));
-            Signal { keep_alive: Box::new(definition), ..self.signal }
+            reg_signal(
+                &mut definition.source.write().unwrap(),
+                &self.signal,
+                move |_| make_callback(&weak_parent.upgrade().unwrap()),
+            );
+            Signal {
+                keep_alive: Box::new(definition),
+                ..self.signal
+            }
         })
     }
 }
 
 impl<A> Deref for SignalCycle<A> {
     type Target = Signal<A>;
-    fn deref(&self) -> &Signal<A> { &self.signal }
+    fn deref(&self) -> &Signal<A> {
+        &self.signal
+    }
 }
-
 
 /// Same as `Stream::hold`.
 pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
-    where A: Send + Sync + 'static,
+where
+    A: Send + Sync + 'static,
 {
     commit(|| {
         let signal = Signal::build(SignalFn::Const(initial), stream.clone());
-        reg_signal(&mut stream::source(&stream).write().unwrap(), &signal, SignalFn::Const);
+        reg_signal(
+            &mut stream::source(&stream).write().unwrap(),
+            &signal,
+            SignalFn::Const,
+        );
         signal
     })
 }
-
 
 #[cfg(test)]
 mod test {
     use quickcheck::quickcheck;
 
-    use crate::stream::Sink;
-    use crate::signal::{ self, Signal, SignalCycle };
     use crate::lift::lift1;
-    use crate::testing::{ ArcFn, signal_eq, id, pure_fn, partial_comp };
+    use crate::signal::{self, Signal, SignalCycle};
+    use crate::stream::Sink;
+    use crate::testing::{id, partial_comp, pure_fn, signal_eq, ArcFn};
 
     #[test]
     fn functor_identity() {
@@ -564,12 +591,13 @@ mod test {
     #[test]
     fn functor_composition() {
         fn check(signal: Signal<i32>) -> bool {
-            fn f(n: i32) -> i32 { 3 * n }
-            fn g(n: i32) -> i32 { n + 2 }
-            let eq = signal_eq(
-                &lift1(|n| f(g(n)), &signal),
-                &lift1(f, &lift1(g, &signal))
-            );
+            fn f(n: i32) -> i32 {
+                3 * n
+            }
+            fn g(n: i32) -> i32 {
+                n + 2
+            }
+            let eq = signal_eq(&lift1(|n| f(g(n)), &signal), &lift1(f, &lift1(g, &signal)));
             (0..10).all(|_| eq.sample())
         }
         quickcheck(check as fn(Signal<i32>) -> bool);
@@ -587,13 +615,17 @@ mod test {
     #[test]
     fn applicative_composition() {
         fn check(signal: Signal<i32>) -> bool {
-            fn f(n: i32) -> i32 { n * 4 }
-            fn g(n: i32) -> i32 { n - 3 }
+            fn f(n: i32) -> i32 {
+                n * 4
+            }
+            fn g(n: i32) -> i32 {
+                n - 3
+            }
             let u = pure_fn(f);
             let v = pure_fn(g);
             let eq = signal_eq(
                 &pure_fn(partial_comp).apply(&u).apply(&v).apply(&signal),
-                &u.apply(&v.apply(&signal))
+                &u.apply(&v.apply(&signal)),
             );
             (0..10).all(|_| eq.sample())
         }
@@ -603,11 +635,10 @@ mod test {
     #[test]
     fn applicative_homomorphism() {
         fn check(x: i32) -> bool {
-            fn f(x: i32) -> i32 { x * (-5) }
-            let eq = signal_eq(
-                &pure_fn(f).apply(&Signal::new(x)),
-                &Signal::new(f(x))
-            );
+            fn f(x: i32) -> i32 {
+                x * (-5)
+            }
+            let eq = signal_eq(&pure_fn(f).apply(&Signal::new(x)), &Signal::new(f(x)));
             (0..10).all(|_| eq.sample())
         }
         quickcheck(check as fn(i32) -> bool);
@@ -616,11 +647,13 @@ mod test {
     #[test]
     fn applicative_interchange() {
         fn check(x: i32) -> bool {
-            fn f(x: i32) -> i32 { x * 2 - 7 }
+            fn f(x: i32) -> i32 {
+                x * 2 - 7
+            }
             let u = pure_fn(f);
             let eq = signal_eq(
                 &u.apply(&Signal::new(x)),
-                &pure_fn(move |f: ArcFn<i32, i32>| f(x)).apply(&u)
+                &pure_fn(move |f: ArcFn<i32, i32>| f(x)).apply(&u),
             );
             (0..10).all(|_| eq.sample())
         }
@@ -655,7 +688,9 @@ mod test {
     fn snapshot() {
         let sink1: Sink<i32> = Sink::new();
         let sink2: Sink<f64> = Sink::new();
-        let mut snap_events = sink1.stream().hold(1)
+        let mut snap_events = sink1
+            .stream()
+            .hold(1)
             .snapshot(&sink2.stream().map(|x| x + 3.0), |a, b| (a, b))
             .events();
         sink2.send(4.0);
@@ -696,9 +731,7 @@ mod test {
     fn snapshot_order_standard() {
         let sink = Sink::new();
         let signal = sink.stream().hold(0);
-        let mut events = signal
-            .snapshot(&sink.stream(), |a, b| (a, b))
-            .events();
+        let mut events = signal.snapshot(&sink.stream(), |a, b| (a, b)).events();
         sink.send(1);
         assert_eq!(events.next(), Some((0, 1)));
     }
@@ -752,7 +785,10 @@ mod test {
         let sink1 = Sink::new();
         let sink2 = Sink::new();
 
-        let mut switched = control_stream.fold(sink1.stream(), |_, s| s).switch().events();
+        let mut switched = control_stream
+            .fold(sink1.stream(), |_, s| s)
+            .switch()
+            .events();
 
         sink2.send(1);
         sink1.send(2);
