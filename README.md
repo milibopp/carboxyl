@@ -100,7 +100,7 @@ See the [documentation][docs] for details.
 
 ## License
 
-Copyright 2014, 2015, 2016 Eduard Bopp.
+Copyright 2014-2020 Carboxyl contributors.
 
 This Source Code Form is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
