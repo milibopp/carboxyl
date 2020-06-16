@@ -1,13 +1,8 @@
 //! FRP benchmarks from https://github.com/tsurucapital/frp-benchmarks
 
-extern crate rand;
-extern crate carboxyl;
-extern crate criterion;
-
 use rand::{SeedableRng, seq::IteratorRandom, rngs::StdRng};
 use carboxyl::Sink;
 use criterion::{criterion_group, criterion_main, Criterion, Bencher};
-
 
 /// Second-order benchmark.
 ///
@@ -18,7 +13,7 @@ use criterion::{criterion_group, criterion_main, Criterion, Bencher};
 /// at random, then print the current value of the `Signal<i32>`.
 ///
 /// Benchmark the time required for `n_steps` steps.
-fn second_order(n_sinks: usize, n_steps: usize, b: &mut Bencher) {
+fn second_order(n_sinks: usize, n_steps: usize, b: &mut Bencher<'_>) {
     // Setup network
     let stepper = Sink::<usize>::new();
     let sinks = (0..n_sinks)

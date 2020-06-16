@@ -3,6 +3,7 @@ name = "carboxyl"
 version = "0.2.2"
 authors = ["Emilia Bopp <Emilia.bopp@aepsil0n.de>"]
 description = "Library for functional reactive programming"
+edition = "2018"
 documentation = "https://docs.rs/carboxyl/"
 homepage = "https://github.com/edibopp/carboxyl"
 repository = "https://github.com/edibopp/carboxyl"

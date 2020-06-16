@@ -6,13 +6,13 @@ use std::fmt;
 #[cfg(test)]
 use quickcheck::{ Arbitrary, Gen };
 
-use source::{ Source, with_weak, CallbackError };
-use stream::{ self, BoxClone, Stream };
-use transaction::{ commit, later };
-use pending::Pending;
-use lift;
+use crate::source::{ Source, with_weak, CallbackError };
+use crate::stream::{ self, BoxClone, Stream };
+use crate::transaction::{ commit, later };
+use crate::pending::Pending;
+use crate::lift;
 #[cfg(test)]
-use testing::ArcFn;
+use crate::testing::ArcFn;
 
 
 /// A functional signal. Caches its return value during a transaction.
@@ -474,7 +474,7 @@ impl<A: Arbitrary + Sync + Clone + 'static> Arbitrary for Signal<A> {
 }
 
 impl<A: fmt::Debug + Clone + 'static> fmt::Debug for Signal<A> {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         commit(|| match **self.current.read().unwrap() {
             SignalFn::Const(ref a) =>
                 fmt.debug_struct("Signal::const").field("value", &a).finish(),
@@ -547,10 +547,10 @@ pub fn hold<A>(initial: A, stream: &Stream<A>) -> Signal<A>
 mod test {
     use quickcheck::quickcheck;
 
-    use ::stream::Sink;
-    use ::signal::{ self, Signal, SignalCycle };
-    use ::lift::lift1;
-    use ::testing::{ ArcFn, signal_eq, id, pure_fn, partial_comp };
+    use crate::stream::Sink;
+    use crate::signal::{ self, Signal, SignalCycle };
+    use crate::lift::lift1;
+    use crate::testing::{ ArcFn, signal_eq, id, pure_fn, partial_comp };
 
     #[test]
     fn functor_identity() {

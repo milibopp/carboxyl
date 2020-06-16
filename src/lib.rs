@@ -135,15 +135,8 @@
 
 #![warn(missing_docs)]
 
-#[cfg(test)]
-extern crate rand;
-#[cfg(test)]
-extern crate quickcheck;
-#[macro_use(lazy_static)]
-extern crate lazy_static;
-
-pub use stream::{ Sink, Stream };
-pub use signal::{ Signal };
+pub use crate::stream::{ Sink, Stream };
+pub use crate::signal::{ Signal };
 
 mod transaction;
 mod source;

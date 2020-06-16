@@ -3,8 +3,8 @@
 use std::sync::{ Arc, Mutex, RwLock, Weak };
 
 use super::Stream;
-use ::source::{ Source, with_weak, CallbackResult, CallbackError };
-use ::transaction::later;
+use crate::source::{ Source, with_weak, CallbackResult, CallbackError };
+use crate::transaction::later;
 
 
 fn update_value<T, F>(mutex: &Mutex<Option<T>>, a: T, f: F)

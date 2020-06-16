@@ -4,8 +4,8 @@
 //! recommended to just use the macro lift! instead.
 
 use std::sync::Arc;
-use signal::{ Signal, SignalFn, signal_build, signal_current, signal_source, reg_signal, sample_raw };
-use transaction::commit;
+use crate::signal::{ Signal, SignalFn, signal_build, signal_current, signal_source, reg_signal, sample_raw };
+use crate::transaction::commit;
 
 
 #[macro_export]
@@ -109,7 +109,7 @@ pub fn lift2<A, B, C, F>(f: F, sa: &Signal<A>, sb: &Signal<B>) -> Signal<C>
               C: Send + Sync + Clone + 'static,
               F: Fn(A, B) -> C + Send + Sync + 'static,
     {
-        use signal::SignalFn::{ Const, Func };
+        use crate::signal::SignalFn::{ Const, Func };
         let sa_clone = sa.clone();
         let sb_clone = sb.clone();
         let f = f.clone();
@@ -182,8 +182,8 @@ where F: Fn(A, B, C, D) -> Ret + Send + Sync + 'static,
 
 #[cfg(test)]
 mod test {
-    use stream::Sink;
-    use signal::Signal;
+    use crate::stream::Sink;
+    use crate::signal::Signal;
 
     #[test]
     fn lift0() {
