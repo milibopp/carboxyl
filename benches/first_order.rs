@@ -1,13 +1,12 @@
 //! FRP benchmarks from https://github.com/tsurucapital/frp-benchmarks
-#![feature(test)]
 
-extern crate test;
 extern crate rand;
 extern crate carboxyl;
+extern crate criterion;
 
-use test::Bencher;
-use rand::{XorShiftRng, sample};
+use rand::{SeedableRng, seq::IteratorRandom, rngs::StdRng};
 use carboxyl::{Sink, Stream};
+use criterion::{criterion_group, criterion_main, Criterion, Bencher};
 
 
 /// First-order benchmark.
@@ -25,37 +24,31 @@ fn first_order(n_sinks: usize, n_steps: usize, b: &mut Bencher) {
         .collect();
 
     // Feed events
-    let mut rng = XorShiftRng::new_unseeded();
+    let mut rng = StdRng::from_entropy();
     b.iter(|| for k in 0..n_steps {
         let s = format!("{}", k);
-        for sink in sample(&mut rng, sinks.iter(), 10) {
+        for sink in sinks.iter().choose_multiple(&mut rng, 10) {
             sink.send(s.clone());
         }
     });
 }
 
-#[bench]
-fn first_order_100(b: &mut Bencher) {
-    first_order(1_000, 100, b);
-}
-
-#[bench]
-fn first_order_1k(b: &mut Bencher) {
-    first_order(1_000, 1_000, b);
-}
-
-#[bench]
-fn first_order_10k(b: &mut Bencher) {
-    first_order(1_000, 10_000, b);
-}
-
 /// A small reference benchmark to do the same amount of actual work without FRP
-#[bench]
 fn first_order_1k_ref(b: &mut Bencher) {
-    let mut rng = XorShiftRng::new_unseeded();
+    let mut rng = StdRng::from_entropy();
     b.iter(|| for i in 0..1_000 {
-        for _k in sample(&mut rng, 0..1_000, 10) {
+        for _k in (0..1_000).choose_multiple(&mut rng, 10) {
             format!("{}", i);
         }
     });
 }
+
+fn bench_fn(c: &mut Criterion) {
+    c.bench_function("first order 1k reference", |b| first_order_1k_ref(b));
+    c.bench_function("first order 100", |b| first_order(1_000, 100, b));
+    c.bench_function("first order 1k", |b| first_order(1_000, 1_000, b));
+    c.bench_function("first order 10k", |b| first_order(1_000, 10_000, b));
+}
+
+criterion_group!(benches, bench_fn);
+criterion_main!(benches);
