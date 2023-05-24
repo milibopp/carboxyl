@@ -17,7 +17,7 @@ autobenches = false
 lazy_static = "1.4"
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = "0.5"
 rand = "0.8"
 quickcheck = "1.0"
 skeptic = "0.13"
