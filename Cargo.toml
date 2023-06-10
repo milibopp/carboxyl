@@ -1,7 +1,7 @@
 [package]
 name = "carboxyl"
 version = "0.2.2"
-authors = ["Emilia Bopp <Emilia.bopp@aepsil0n.de>"]
+authors = ["Eduard Bopp <eduard.bopp@aepsil0n.de>"]
 description = "Library for functional reactive programming"
 edition = "2018"
 documentation = "https://docs.rs/carboxyl/"
@@ -17,7 +17,7 @@ autobenches = false
 lazy_static = "1.4"
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = "0.5"
 rand = "0.8"
 quickcheck = "1.0"
 skeptic = "0.13"
